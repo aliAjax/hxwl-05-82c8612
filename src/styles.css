@@ -557,6 +557,109 @@ label {
   min-width: 96px;
 }
 
+.field-full {
+  grid-column: 1 / -1;
+}
+
+.record-index.status-ok {
+  background: var(--accent);
+}
+
+.record-index.status-watch {
+  background: var(--warn);
+}
+
+.record-index.status-danger {
+  background: var(--danger);
+}
+
+.record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.record-header h3 {
+  margin-bottom: 0;
+}
+
+.record-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.record-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.record-status-稳定 {
+  background: color-mix(in srgb, var(--accent) 14%, #ffffff);
+  color: #15803d;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.record-status-稳定::before {
+  background: var(--accent);
+}
+
+.record-status-关注 {
+  background: color-mix(in srgb, var(--warn) 16%, #ffffff);
+  color: #b45309;
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+}
+
+.record-status-关注::before {
+  background: var(--warn);
+}
+
+.record-status-异常 {
+  background: color-mix(in srgb, var(--danger) 14%, #ffffff);
+  color: #be123c;
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+}
+
+.record-status-异常::before {
+  background: var(--danger);
+}
+
+.record-metrics {
+  margin-bottom: 6px;
+  color: #334155;
+  font-size: 14px;
+}
+
+.record-note {
+  margin-bottom: 4px;
+  color: #526070;
+  line-height: 1.6;
+}
+
+.record-time {
+  margin-bottom: 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.empty-state-compact {
+  padding: 32px 24px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (max-width: 860px) {
   .hero,
   .workspace,

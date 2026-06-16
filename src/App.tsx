@@ -65,6 +65,50 @@ const statusColors = ["status-ok", "status-watch", "status-danger"];
 
 const TANK_TYPES = ["草缸", "海缸", "三湖缸", "繁殖缸"];
 
+type RecordStatus = "稳定" | "关注" | "异常";
+
+interface WaterMetrics {
+  ph: string;
+  ammonia: string;
+  nitrite: string;
+  nitrate: string;
+  hardness: string;
+  temperature: string;
+  waterChange: string;
+}
+
+interface WaterRecord {
+  id: string;
+  tankName: string;
+  tankId?: string;
+  recordedAt: string;
+  metrics: WaterMetrics;
+  status: RecordStatus;
+  note: string;
+}
+
+const METRIC_RANGES: Record<
+  keyof Omit<WaterMetrics, "waterChange">,
+  { ok: [number, number]; watch: [number, number]; unit: string; label: string }
+> = {
+  ph: { ok: [6.5, 7.5], watch: [6.0, 8.0], unit: "", label: "pH" },
+  ammonia: { ok: [0, 0], watch: [0, 0.25], unit: "ppm", label: "氨氮" },
+  nitrite: { ok: [0, 0], watch: [0, 0.5], unit: "ppm", label: "亚硝酸盐" },
+  nitrate: { ok: [0, 20], watch: [0, 40], unit: "ppm", label: "硝酸盐" },
+  hardness: { ok: [4, 12], watch: [2, 18], unit: "dGH", label: "硬度" },
+  temperature: { ok: [24, 28], watch: [20, 32], unit: "°C", label: "温度" },
+};
+
+const emptyWaterMetrics: WaterMetrics = {
+  ph: "",
+  ammonia: "",
+  nitrite: "",
+  nitrate: "",
+  hardness: "",
+  temperature: "",
+  waterChange: "",
+};
+
 interface TankProfile {
   id: string;
   name: string;
@@ -92,6 +136,69 @@ function MetricCard({ label, value, index }: { label: string; value: string; ind
       <i className={statusColors[index % statusColors.length]} />
     </article>
   );
+}
+
+function evaluateMetric(
+  key: keyof Omit<WaterMetrics, "waterChange">,
+  raw: string
+): RecordStatus {
+  const value = parseFloat(raw);
+  if (isNaN(value)) return "稳定";
+  const range = METRIC_RANGES[key];
+  if (value < range.watch[0] || value > range.watch[1]) return "异常";
+  if (value < range.ok[0] || value > range.ok[1]) return "关注";
+  return "稳定";
+}
+
+function evaluateRecordStatus(metrics: WaterMetrics): { status: RecordStatus; note: string } {
+  const metricKeys = Object.keys(METRIC_RANGES) as (keyof Omit<WaterMetrics, "waterChange">)[];
+  const issues: { key: keyof Omit<WaterMetrics, "waterChange">; status: RecordStatus }[] = [];
+  let overall: RecordStatus = "稳定";
+
+  for (const key of metricKeys) {
+    const raw = metrics[key];
+    if (!raw.trim()) continue;
+    const st = evaluateMetric(key, raw);
+    if (st !== "稳定") {
+      issues.push({ key, status: st });
+    }
+    if (st === "异常") overall = "异常";
+    else if (st === "关注" && overall !== "异常") overall = "关注";
+  }
+
+  let note = "";
+  if (issues.length === 0) {
+    note = "各项指标正常，继续保持";
+  } else {
+    const dangerItems = issues.filter((i) => i.status === "异常");
+    const watchItems = issues.filter((i) => i.status === "关注");
+    const parts: string[] = [];
+    if (dangerItems.length > 0) {
+      parts.push(
+        dangerItems
+          .map((i) => {
+            const r = METRIC_RANGES[i.key];
+            return `${r.label}${metrics[i.key]}${r.unit}异常`;
+          })
+          .join("、")
+      );
+    }
+    if (watchItems.length > 0) {
+      parts.push(
+        watchItems
+          .map((i) => `${METRIC_RANGES[i.key].label}${metrics[i.key]}需关注`)
+          .join("、")
+      );
+    }
+    note = parts.join("；");
+    if (metrics.waterChange.trim()) {
+      note += `；本次换水${metrics.waterChange}`;
+    }
+    if (dangerItems.length > 0) {
+      note += "，建议立即处理";
+    }
+  }
+  return { status: overall, note };
 }
 
 function App() {
@@ -166,6 +273,76 @@ function App() {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
+  const [waterFormData, setWaterFormData] = useState<WaterMetrics>(emptyWaterMetrics);
+  const [selectedTankForRecord, setSelectedTankForRecord] = useState<string>("");
+  const [customTankName, setCustomTankName] = useState<string>("");
+  const [waterRecords, setWaterRecords] = useState<WaterRecord[]>([]);
+
+  const updateWaterForm = (key: keyof WaterMetrics, value: string) => {
+    setWaterFormData((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleWaterRecordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const tankName =
+      (selectedTankForRecord && tanks.find((t) => t.id === selectedTankForRecord)?.name) ||
+      customTankName.trim();
+    if (!tankName) {
+      alert("请选择鱼缸或填写鱼缸名称");
+      return;
+    }
+    const hasAnyMetric = (Object.keys(waterFormData) as (keyof WaterMetrics)[]).some(
+      (k) => waterFormData[k].trim() !== ""
+    );
+    if (!hasAnyMetric) {
+      alert("请至少填写一项水质指标");
+      return;
+    }
+    const { status, note } = evaluateRecordStatus(waterFormData);
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const recordedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const newRecord: WaterRecord = {
+      id: Date.now().toString(),
+      tankName,
+      tankId: selectedTankForRecord || undefined,
+      recordedAt,
+      metrics: { ...waterFormData },
+      status,
+      note,
+    };
+    setWaterRecords((prev) => [newRecord, ...prev]);
+    setWaterFormData(emptyWaterMetrics);
+    setSelectedTankForRecord("");
+    setCustomTankName("");
+  };
+
+  const getStatusClass = (status: RecordStatus) => {
+    switch (status) {
+      case "稳定":
+        return "status-ok";
+      case "关注":
+        return "status-watch";
+      case "异常":
+        return "status-danger";
+    }
+  };
+
+  const buildMetricSummary = (metrics: WaterMetrics) => {
+    const parts: string[] = [];
+    (Object.keys(METRIC_RANGES) as (keyof Omit<WaterMetrics, "waterChange">)[]).forEach((k) => {
+      if (metrics[k].trim()) {
+        const r = METRIC_RANGES[k];
+        parts.push(`${r.label} ${metrics[k]}${r.unit}`);
+      }
+    });
+    return parts.join(" · ");
+  };
+
+  const displayRecords = useMemo(() => {
+    return [...waterRecords];
+  }, [waterRecords]);
+
   return (
     <main className="app-shell">
       <section className="hero">
@@ -203,43 +380,152 @@ function App() {
         </aside>
 
         <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
+          <form onSubmit={handleWaterRecordSubmit}>
+            <div className="section-heading">
+              <div>
+                <p>{project.domain}</p>
+                <h2>水质记录录入</h2>
+              </div>
+              <button type="submit" className="primary-action">
+                提交记录
+              </button>
             </div>
-            <button className="primary-action">新增记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
+            <div className="field-grid">
+              <label>
+                <span>鱼缸</span>
+                <select
+                  value={selectedTankForRecord}
+                  onChange={(e) => setSelectedTankForRecord(e.target.value)}
+                >
+                  <option value="">— 选择已有鱼缸 —</option>
+                  {tanks.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
               </label>
-            ))}
-          </div>
+              <label>
+                <span>或自定义鱼缸名称</span>
+                <input
+                  type="text"
+                  value={customTankName}
+                  onChange={(e) => setCustomTankName(e.target.value)}
+                  placeholder="例如：草缸A"
+                />
+              </label>
+              <label>
+                <span>pH</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={waterFormData.ph}
+                  onChange={(e) => updateWaterForm("ph", e.target.value)}
+                  placeholder="例如 6.8"
+                />
+              </label>
+              <label>
+                <span>氨氮 (ppm)</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={waterFormData.ammonia}
+                  onChange={(e) => updateWaterForm("ammonia", e.target.value)}
+                  placeholder="例如 0"
+                />
+              </label>
+              <label>
+                <span>亚硝酸盐 (ppm)</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={waterFormData.nitrite}
+                  onChange={(e) => updateWaterForm("nitrite", e.target.value)}
+                  placeholder="例如 0"
+                />
+              </label>
+              <label>
+                <span>硝酸盐 (ppm)</span>
+                <input
+                  type="number"
+                  step="1"
+                  value={waterFormData.nitrate}
+                  onChange={(e) => updateWaterForm("nitrate", e.target.value)}
+                  placeholder="例如 20"
+                />
+              </label>
+              <label>
+                <span>硬度 (dGH)</span>
+                <input
+                  type="number"
+                  step="1"
+                  value={waterFormData.hardness}
+                  onChange={(e) => updateWaterForm("hardness", e.target.value)}
+                  placeholder="例如 8"
+                />
+              </label>
+              <label>
+                <span>温度 (°C)</span>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={waterFormData.temperature}
+                  onChange={(e) => updateWaterForm("temperature", e.target.value)}
+                  placeholder="例如 26"
+                />
+              </label>
+              <label className="field-full">
+                <span>换水量</span>
+                <input
+                  type="text"
+                  value={waterFormData.waterChange}
+                  onChange={(e) => updateWaterForm("waterChange", e.target.value)}
+                  placeholder="例如 30%"
+                />
+              </label>
+            </div>
+          </form>
         </section>
       </section>
 
       <section className="records panel">
         <div className="section-heading">
           <div>
-            <p>示例数据</p>
+            <p>水质历史</p>
             <h2>近期记录</h2>
           </div>
-          <button>导出摘要</button>
+          <button disabled={displayRecords.length === 0}>导出摘要</button>
         </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
+        {displayRecords.length === 0 ? (
+          <div className="empty-state empty-state-compact">
+            <div className="empty-icon">💧</div>
+            <h3>暂无水质记录</h3>
+            <p>在上方「水质记录录入」表单中填写数据并提交，记录将出现在这里。</p>
+          </div>
+        ) : (
+          <div className="record-list">
+            {displayRecords.map((record, index) => (
+              <article key={record.id} className="record-card">
+                <div className={`record-index ${getStatusClass(record.status)}`}>
+                  {String(index + 1).padStart(2, "0")}
+                </div>
+                <div className="record-main">
+                  <header className="record-header">
+                    <h3>{record.tankName}</h3>
+                    <span className={`record-status record-status-${record.status}`}>
+                      {record.status}
+                    </span>
+                  </header>
+                  <p className="record-metrics">
+                    {buildMetricSummary(record.metrics) || "未填写指标"}
+                  </p>
+                  <p className="record-note">{record.note}</p>
+                  <p className="record-time">{record.recordedAt}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="tank-profiles panel">
