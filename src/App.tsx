@@ -336,6 +336,9 @@ function App() {
         parts.push(`${r.label} ${metrics[k]}${r.unit}`);
       }
     });
+    if (metrics.waterChange.trim()) {
+      parts.push(`换水量 ${metrics.waterChange}`);
+    }
     return parts.join(" · ");
   };
 
