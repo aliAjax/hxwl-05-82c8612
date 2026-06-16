@@ -119,6 +119,20 @@ interface TankProfile {
   maintainer: string;
 }
 
+type PlanStatus = "normal" | "upcoming" | "overdue" | "completed";
+
+interface WaterChangePlan {
+  id: string;
+  tankName: string;
+  tankId?: string;
+  cycleDays: string;
+  waterRatio: string;
+  nextDate: string;
+  note: string;
+  completedAt?: string;
+  createdAt: string;
+}
+
 const emptyForm: Omit<TankProfile, "id"> = {
   name: "",
   tankType: "草缸",
@@ -126,6 +140,15 @@ const emptyForm: Omit<TankProfile, "id"> = {
   setupDate: "",
   mainCreatures: "",
   maintainer: "",
+};
+
+const emptyPlanForm: Omit<WaterChangePlan, "id" | "createdAt"> = {
+  tankName: "",
+  tankId: "",
+  cycleDays: "7",
+  waterRatio: "30",
+  nextDate: "",
+  note: "",
 };
 
 function MetricCard({ label, value, index }: { label: string; value: string; index: number }) {
@@ -199,6 +222,40 @@ function evaluateRecordStatus(metrics: WaterMetrics): { status: RecordStatus; no
     }
   }
   return { status: overall, note };
+}
+
+function getPlanStatus(plan: WaterChangePlan): PlanStatus {
+  if (plan.completedAt) return "completed";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const nextDate = new Date(plan.nextDate);
+  nextDate.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return "overdue";
+  if (diffDays <= 3) return "upcoming";
+  return "normal";
+}
+
+function getPlanStatusText(status: PlanStatus): string {
+  switch (status) {
+    case "normal": return "正常";
+    case "upcoming": return "即将到期";
+    case "overdue": return "已逾期";
+    case "completed": return "已完成";
+  }
+}
+
+function getPlanDaysText(plan: WaterChangePlan): string {
+  if (plan.completedAt) return "已完成";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const nextDate = new Date(plan.nextDate);
+  nextDate.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "今天";
+  if (diffDays === 1) return "明天";
+  if (diffDays > 0) return `${diffDays}天后`;
+  return `逾期${Math.abs(diffDays)}天`;
 }
 
 function App() {
@@ -345,6 +402,104 @@ function App() {
   const displayRecords = useMemo(() => {
     return [...waterRecords];
   }, [waterRecords]);
+
+  const [waterChangePlans, setWaterChangePlans] = useState<WaterChangePlan[]>([]);
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [planFormData, setPlanFormData] = useState<Omit<WaterChangePlan, "id" | "createdAt">>(emptyPlanForm);
+  const [planFilter, setPlanFilter] = useState<string>("全部");
+
+  const planFilterOptions = ["全部", "已逾期", "即将到期", "正常", "已完成"];
+
+  const openAddPlanModal = () => {
+    setPlanFormData({ ...emptyPlanForm });
+    setPlanModalOpen(true);
+  };
+
+  const closePlanModal = () => {
+    setPlanModalOpen(false);
+    setPlanFormData({ ...emptyPlanForm });
+  };
+
+  const updatePlanForm = (key: keyof Omit<WaterChangePlan, "id" | "createdAt">, value: string) => {
+    setPlanFormData((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handlePlanSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const tankName =
+      (planFormData.tankId && tanks.find((t) => t.id === planFormData.tankId)?.name) ||
+      planFormData.tankName.trim();
+    if (!tankName) {
+      alert("请选择鱼缸或填写鱼缸名称");
+      return;
+    }
+    if (!planFormData.nextDate) {
+      alert("请选择下次维护日期");
+      return;
+    }
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const createdAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const newPlan: WaterChangePlan = {
+      ...planFormData,
+      tankName,
+      id: Date.now().toString(),
+      createdAt,
+    };
+    setWaterChangePlans((prev) => [...prev, newPlan]);
+    closePlanModal();
+  };
+
+  const handleCompletePlan = (planId: string) => {
+    if (!window.confirm("确认已完成本次换水？完成后将自动更新下次维护日期。")) return;
+    const plan = waterChangePlans.find((p) => p.id === planId);
+    if (!plan) return;
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const completedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const cycleDays = parseInt(plan.cycleDays) || 7;
+    const nextDate = new Date(now);
+    nextDate.setDate(nextDate.getDate() + cycleDays);
+    const nextDateStr = `${nextDate.getFullYear()}-${pad(nextDate.getMonth() + 1)}-${pad(nextDate.getDate())}`;
+    const newPlan: WaterChangePlan = {
+      ...plan,
+      nextDate: nextDateStr,
+      completedAt: undefined,
+    };
+    setWaterChangePlans((prev) => prev.map((p) => (p.id === planId ? newPlan : p)));
+  };
+
+  const handleDeletePlan = (planId: string) => {
+    if (!window.confirm("确定删除该换水计划吗？")) return;
+    setWaterChangePlans((prev) => prev.filter((p) => p.id !== planId));
+  };
+
+  const filteredPlans = useMemo(() => {
+    let plans = [...waterChangePlans];
+    if (planFilter !== "全部") {
+      plans = plans.filter((p) => {
+        const status = getPlanStatus(p);
+        if (planFilter === "已逾期") return status === "overdue";
+        if (planFilter === "即将到期") return status === "upcoming";
+        if (planFilter === "正常") return status === "normal";
+        if (planFilter === "已完成") return status === "completed";
+        return true;
+      });
+    }
+    plans.sort((a, b) => {
+      const statusRank: Record<PlanStatus, number> = {
+        overdue: 0,
+        upcoming: 1,
+        normal: 2,
+        completed: 3,
+      };
+      const rankA = statusRank[getPlanStatus(a)];
+      const rankB = statusRank[getPlanStatus(b)];
+      if (rankA !== rankB) return rankA - rankB;
+      return new Date(a.nextDate).getTime() - new Date(b.nextDate).getTime();
+    });
+    return plans;
+  }, [waterChangePlans, planFilter]);
 
   return (
     <main className="app-shell">
@@ -623,6 +778,208 @@ function App() {
           </div>
         )}
       </section>
+
+      <section className="water-change-plans panel">
+        <div className="section-heading">
+          <div>
+            <p>维护管理</p>
+            <h2>换水计划</h2>
+          </div>
+          <button className="primary-action" onClick={openAddPlanModal}>
+            + 新增计划
+          </button>
+        </div>
+
+        <div className="chips muted plan-filter-chips">
+          {planFilterOptions.map((filter) => {
+            let count = 0;
+            if (filter === "全部") {
+              count = waterChangePlans.length;
+            } else {
+              count = waterChangePlans.filter((p) => {
+                const status = getPlanStatus(p);
+                if (filter === "已逾期") return status === "overdue";
+                if (filter === "即将到期") return status === "upcoming";
+                if (filter === "正常") return status === "normal";
+                if (filter === "已完成") return status === "completed";
+                return false;
+              }).length;
+            }
+            return (
+              <button
+                key={filter}
+                className={planFilter === filter ? "chip-active" : ""}
+                onClick={() => setPlanFilter(filter)}
+              >
+                {filter}
+                <span className="chip-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {filteredPlans.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">📅</div>
+            <h3>暂无换水计划</h3>
+            <p>
+              {waterChangePlans.length === 0
+                ? "点击右上角「新增计划」，为您的鱼缸设置定期换水提醒。"
+                : `当前「${planFilter}」分类下暂无计划，试试切换其他筛选分类。`}
+            </p>
+            {waterChangePlans.length === 0 && (
+              <button className="primary-action" onClick={openAddPlanModal}>
+                + 新增计划
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="plan-grid">
+            {filteredPlans.map((plan) => {
+              const status = getPlanStatus(plan);
+              const statusText = getPlanStatusText(status);
+              const daysText = getPlanDaysText(plan);
+              return (
+                <article key={plan.id} className={`plan-card plan-card-${status}`}>
+                  <header className="plan-card-header">
+                    <div>
+                      <span className={`plan-status plan-status-${status}`}>
+                        {statusText}
+                      </span>
+                      <h3>{plan.tankName}</h3>
+                    </div>
+                    <div className="plan-actions">
+                      {status !== "completed" && (
+                        <button
+                          className="plan-action-btn plan-action-complete"
+                          onClick={() => handleCompletePlan(plan.id)}
+                        >
+                          ✓ 完成换水
+                        </button>
+                      )}
+                      <button
+                        className="plan-action-btn plan-action-delete"
+                        onClick={() => handleDeletePlan(plan.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </header>
+                  <dl className="plan-info-list">
+                    <div>
+                      <dt>换水周期</dt>
+                      <dd>每 {plan.cycleDays} 天</dd>
+                    </div>
+                    <div>
+                      <dt>换水比例</dt>
+                      <dd>{plan.waterRatio}%</dd>
+                    </div>
+                    <div>
+                      <dt>下次维护</dt>
+                      <dd className={`plan-date plan-date-${status}`}>
+                        {plan.nextDate}
+                        <span className="plan-days">{daysText}</span>
+                      </dd>
+                    </div>
+                    {plan.note && (
+                      <div className="plan-note-full">
+                        <dt>备注</dt>
+                        <dd>{plan.note}</dd>
+                      </div>
+                    )}
+                  </dl>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {planModalOpen && (
+        <div className="modal-overlay" onClick={closePlanModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <header className="modal-header">
+              <h2>新增换水计划</h2>
+              <button className="modal-close" onClick={closePlanModal}>
+                ×
+              </button>
+            </header>
+            <form onSubmit={handlePlanSubmit} className="modal-form">
+              <div className="form-grid">
+                <label>
+                  <span>鱼缸</span>
+                  <select
+                    value={planFormData.tankId || ""}
+                    onChange={(e) => updatePlanForm("tankId", e.target.value)}
+                  >
+                    <option value="">— 选择已有鱼缸 —</option>
+                    {tanks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>或自定义鱼缸名称</span>
+                  <input
+                    type="text"
+                    value={planFormData.tankName}
+                    onChange={(e) => updatePlanForm("tankName", e.target.value)}
+                    placeholder="例如：草缸A"
+                  />
+                </label>
+                <label>
+                  <span>换水周期（天）</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={planFormData.cycleDays}
+                    onChange={(e) => updatePlanForm("cycleDays", e.target.value)}
+                    placeholder="例如 7"
+                  />
+                </label>
+                <label>
+                  <span>计划换水比例（%）</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={planFormData.waterRatio}
+                    onChange={(e) => updatePlanForm("waterRatio", e.target.value)}
+                    placeholder="例如 30"
+                  />
+                </label>
+                <label className="form-full">
+                  <span>下次维护日期 *</span>
+                  <input
+                    type="date"
+                    value={planFormData.nextDate}
+                    onChange={(e) => updatePlanForm("nextDate", e.target.value)}
+                  />
+                </label>
+                <label className="form-full">
+                  <span>备注</span>
+                  <input
+                    type="text"
+                    value={planFormData.note}
+                    onChange={(e) => updatePlanForm("note", e.target.value)}
+                    placeholder="例如：周日上午换水，注意水温"
+                  />
+                </label>
+              </div>
+              <footer className="modal-footer">
+                <button type="button" onClick={closePlanModal}>
+                  取消
+                </button>
+                <button type="submit" className="primary-action">
+                  确认新增
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
+      )}
 
       {modalOpen && (
         <div className="modal-overlay" onClick={closeModal}>
