@@ -451,7 +451,7 @@ function App() {
   };
 
   const handleCompletePlan = (planId: string) => {
-    if (!window.confirm("确认已完成本次换水？完成后将自动更新下次维护日期。")) return;
+    if (!window.confirm("确认已完成本次换水？完成后将自动生成下一次计划。")) return;
     const plan = waterChangePlans.find((p) => p.id === planId);
     if (!plan) return;
     const now = new Date();
@@ -461,12 +461,20 @@ function App() {
     const nextDate = new Date(now);
     nextDate.setDate(nextDate.getDate() + cycleDays);
     const nextDateStr = `${nextDate.getFullYear()}-${pad(nextDate.getMonth() + 1)}-${pad(nextDate.getDate())}`;
-    const newPlan: WaterChangePlan = {
+    const completedPlan: WaterChangePlan = {
       ...plan,
-      nextDate: nextDateStr,
       completedAt,
     };
-    setWaterChangePlans((prev) => prev.map((p) => (p.id === planId ? newPlan : p)));
+    const nextPlan: WaterChangePlan = {
+      ...plan,
+      id: Date.now().toString(),
+      nextDate: nextDateStr,
+      completedAt: undefined,
+      createdAt: completedAt,
+    };
+    setWaterChangePlans((prev) =>
+      prev.map((p) => (p.id === planId ? completedPlan : p)).concat(nextPlan)
+    );
   };
 
   const handleDeletePlan = (planId: string) => {
