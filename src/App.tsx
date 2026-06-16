@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import "./styles.css";
+import { WaterTrendAnalysis, mockDataSource } from "./trend";
 
 const project = {
   "id": "hxwl-05",
@@ -693,6 +694,8 @@ function App() {
           </div>
         )}
       </section>
+
+      <WaterTrendAnalysis dataSource={mockDataSource} />
 
       <section className="tank-profiles panel">
         <div className="section-heading">
