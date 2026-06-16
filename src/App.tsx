@@ -464,7 +464,7 @@ function App() {
     const newPlan: WaterChangePlan = {
       ...plan,
       nextDate: nextDateStr,
-      completedAt: undefined,
+      completedAt,
     };
     setWaterChangePlans((prev) => prev.map((p) => (p.id === planId ? newPlan : p)));
   };
