@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import "./styles.css";
 import { WaterTrendAnalysis, mockDataSource } from "./trend";
 import { AlertCenter, generateAlertsFromRecord } from "./alertCenter/AlertCenter";
 import { AlertItem, TreatmentAction, AlertMetricValues } from "./alertCenter/types";
+import { dataService } from "./db";
 
 const project = {
   "id": "hxwl-05",
@@ -272,6 +273,8 @@ function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Omit<TankProfile, "id">>(emptyForm);
+  const [isLoading, setIsLoading] = useState(true);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
 
   const filterOptions = ["全部", ...TANK_TYPES];
 
@@ -279,6 +282,37 @@ function App() {
     if (activeFilter === "全部") return tanks;
     return tanks.filter((t) => t.tankType === activeFilter);
   }, [tanks, activeFilter]);
+
+  const [waterFormData, setWaterFormData] = useState<WaterMetrics>(emptyWaterMetrics);
+  const [selectedTankForRecord, setSelectedTankForRecord] = useState<string>("");
+  const [customTankName, setCustomTankName] = useState<string>("");
+  const [waterRecords, setWaterRecords] = useState<WaterRecord[]>([]);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+
+  const [waterChangePlans, setWaterChangePlans] = useState<WaterChangePlan[]>([]);
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [planFormData, setPlanFormData] = useState<Omit<WaterChangePlan, "id" | "createdAt">>(emptyPlanForm);
+  const [planFilter, setPlanFilter] = useState<string>("全部");
+
+  const planFilterOptions = ["全部", "已逾期", "即将到期", "正常", "已完成"];
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        await dataService.init();
+        const data = await dataService.getAllData();
+        setTanks(data.tanks);
+        setWaterRecords(data.waterRecords);
+        setWaterChangePlans(data.waterChangePlans);
+        setAlerts(data.alerts);
+      } catch (error) {
+        console.error("Failed to load data from IndexedDB:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const openAddModal = () => {
     setEditingId(null);
@@ -305,26 +339,26 @@ function App() {
     setFormData(emptyForm);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
 
     if (editingId) {
+      const updatedTank: TankProfile = { ...formData, id: editingId };
+      await dataService.updateTank(updatedTank);
       setTanks((prev) =>
-        prev.map((t) => (t.id === editingId ? { ...formData, id: editingId } : t))
+        prev.map((t) => (t.id === editingId ? updatedTank : t))
       );
     } else {
-      const newTank: TankProfile = {
-        ...formData,
-        id: Date.now().toString(),
-      };
+      const newTank = await dataService.addTank(formData);
       setTanks((prev) => [...prev, newTank]);
     }
     closeModal();
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm("确定删除该鱼缸档案吗？")) {
+      await dataService.deleteTank(id);
       setTanks((prev) => prev.filter((t) => t.id !== id));
     }
   };
@@ -333,17 +367,11 @@ function App() {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const [waterFormData, setWaterFormData] = useState<WaterMetrics>(emptyWaterMetrics);
-  const [selectedTankForRecord, setSelectedTankForRecord] = useState<string>("");
-  const [customTankName, setCustomTankName] = useState<string>("");
-  const [waterRecords, setWaterRecords] = useState<WaterRecord[]>([]);
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-
   const updateWaterForm = (key: keyof WaterMetrics, value: string) => {
     setWaterFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleWaterRecordSubmit = (e: React.FormEvent) => {
+  const handleWaterRecordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const tankName =
       (selectedTankForRecord && tanks.find((t) => t.id === selectedTankForRecord)?.name) ||
@@ -363,8 +391,7 @@ function App() {
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
     const recordedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    const newRecord: WaterRecord = {
-      id: Date.now().toString(),
+    const newRecordData: Omit<WaterRecord, "id"> = {
       tankName,
       tankId: selectedTankForRecord || undefined,
       recordedAt,
@@ -372,6 +399,7 @@ function App() {
       status,
       note,
     };
+    const newRecord = await dataService.addWaterRecord(newRecordData);
     setWaterRecords((prev) => [newRecord, ...prev]);
 
     const tankType = selectedTankForRecord
@@ -386,7 +414,10 @@ function App() {
       recordedAt
     );
     if (newAlerts.length > 0) {
-      setAlerts((prev) => [...newAlerts, ...prev]);
+      const savedAlerts = await dataService.addAlerts(
+        newAlerts.map((a) => ({ ...a, id: undefined! } as Omit<AlertItem, "id">))
+      );
+      setAlerts((prev) => [...savedAlerts, ...prev]);
     }
 
     setWaterFormData(emptyWaterMetrics);
@@ -427,36 +458,17 @@ function App() {
     return alerts.filter((a) => a.status === "pending").length;
   }, [alerts]);
 
-  const handleProcessAlert = (
+  const handleProcessAlert = async (
     alertId: string,
     treatment: TreatmentAction,
     treatmentNote: string,
     handler: string
   ) => {
+    const updatedAlert = await dataService.processAlert(alertId, treatment, treatmentNote, handler);
     setAlerts((prev) =>
-      prev.map((a) => {
-        if (a.id !== alertId) return a;
-        const now = new Date();
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const processedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-        return {
-          ...a,
-          status: "processed" as const,
-          treatment,
-          treatmentNote,
-          handler,
-          processedAt,
-        };
-      })
+      prev.map((a) => (a.id === alertId ? updatedAlert : a))
     );
   };
-
-  const [waterChangePlans, setWaterChangePlans] = useState<WaterChangePlan[]>([]);
-  const [planModalOpen, setPlanModalOpen] = useState(false);
-  const [planFormData, setPlanFormData] = useState<Omit<WaterChangePlan, "id" | "createdAt">>(emptyPlanForm);
-  const [planFilter, setPlanFilter] = useState<string>("全部");
-
-  const planFilterOptions = ["全部", "已逾期", "即将到期", "正常", "已完成"];
 
   const openAddPlanModal = () => {
     setPlanFormData({ ...emptyPlanForm });
@@ -472,7 +484,7 @@ function App() {
     setPlanFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handlePlanSubmit = (e: React.FormEvent) => {
+  const handlePlanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const tankName =
       (planFormData.tankId && tanks.find((t) => t.id === planFormData.tankId)?.name) ||
@@ -485,48 +497,24 @@ function App() {
       alert("请选择下次维护日期");
       return;
     }
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const createdAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    const newPlan: WaterChangePlan = {
+    const newPlan = await dataService.addWaterChangePlan({
       ...planFormData,
       tankName,
-      id: Date.now().toString(),
-      createdAt,
-    };
+    });
     setWaterChangePlans((prev) => [...prev, newPlan]);
     closePlanModal();
   };
 
-  const handleCompletePlan = (planId: string) => {
+  const handleCompletePlan = async (planId: string) => {
     if (!window.confirm("确认已完成本次换水？完成后将自动生成下一次计划。")) return;
-    const plan = waterChangePlans.find((p) => p.id === planId);
-    if (!plan) return;
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const completedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    const cycleDays = parseInt(plan.cycleDays) || 7;
-    const nextDate = new Date(now);
-    nextDate.setDate(nextDate.getDate() + cycleDays);
-    const nextDateStr = `${nextDate.getFullYear()}-${pad(nextDate.getMonth() + 1)}-${pad(nextDate.getDate())}`;
-    const completedPlan: WaterChangePlan = {
-      ...plan,
-      completedAt,
-    };
-    const nextPlan: WaterChangePlan = {
-      ...plan,
-      id: Date.now().toString(),
-      nextDate: nextDateStr,
-      completedAt: undefined,
-      createdAt: completedAt,
-    };
-    setWaterChangePlans((prev) =>
-      prev.map((p) => (p.id === planId ? completedPlan : p)).concat(nextPlan)
-    );
+    const nextPlan = await dataService.completeWaterChangePlan(planId);
+    const updatedPlans = await dataService.getWaterChangePlans();
+    setWaterChangePlans(updatedPlans);
   };
 
-  const handleDeletePlan = (planId: string) => {
+  const handleDeletePlan = async (planId: string) => {
     if (!window.confirm("确定删除该换水计划吗？")) return;
+    await dataService.deleteWaterChangePlan(planId);
     setWaterChangePlans((prev) => prev.filter((p) => p.id !== planId));
   };
 
@@ -557,6 +545,61 @@ function App() {
     return plans;
   }, [waterChangePlans, planFilter]);
 
+  const handleClearAllData = async () => {
+    if (!window.confirm("确定要清空所有演示数据吗？此操作不可恢复。")) {
+      setClearConfirmOpen(false);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await dataService.clearAllData();
+      setTanks([]);
+      setWaterRecords([]);
+      setWaterChangePlans([]);
+      setAlerts([]);
+      alert("所有数据已清空，刷新页面后将重新加载演示数据。");
+      setClearConfirmOpen(false);
+    } catch (error) {
+      console.error("Failed to clear data:", error);
+      alert("清空数据失败，请重试。");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleReloadSeedData = async () => {
+    if (!window.confirm("确定要重置为初始演示数据吗？当前所有数据将被替换。")) {
+      setClearConfirmOpen(false);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await dataService.resetToSeedData();
+      const data = await dataService.getAllData();
+      setTanks(data.tanks);
+      setWaterRecords(data.waterRecords);
+      setWaterChangePlans(data.waterChangePlans);
+      setAlerts(data.alerts);
+      setClearConfirmOpen(false);
+    } catch (error) {
+      console.error("Failed to reload seed data:", error);
+      alert("重置数据失败，请重试。");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <main className="app-shell">
+        <div className="loading-state">
+          <div className="loading-spinner" />
+          <p>正在加载数据...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <section className="hero">
@@ -575,6 +618,17 @@ function App() {
         {project.metrics.map((metric: string, index: number) => (
           <MetricCard key={metric} label={metric} value={values[index]} index={index} />
         ))}
+      </section>
+
+      <section className="data-management-bar">
+        <div className="data-info">
+          <span>数据已本地持久化存储 · IndexedDB</span>
+        </div>
+        <div className="data-actions">
+          <button className="secondary-action" onClick={() => setClearConfirmOpen(true)}>
+            🗑️ 数据管理
+          </button>
+        </div>
       </section>
 
       <section className="workspace">
@@ -958,6 +1012,40 @@ function App() {
           </div>
         )}
       </section>
+
+      {clearConfirmOpen && (
+        <div className="modal-overlay" onClick={() => setClearConfirmOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <header className="modal-header">
+              <h2>数据管理</h2>
+              <button className="modal-close" onClick={() => setClearConfirmOpen(false)}>
+                ×
+              </button>
+            </header>
+            <div className="modal-body">
+              <p className="modal-warning">
+                ⚠️ 请谨慎操作，以下操作将影响您的本地数据。
+              </p>
+              <div className="data-management-actions">
+                <div className="data-action-card">
+                  <h3>重置为演示数据</h3>
+                  <p>将所有数据恢复为初始演示状态，当前数据将被替换。</p>
+                  <button className="secondary-action" onClick={handleReloadSeedData}>
+                    重置演示数据
+                  </button>
+                </div>
+                <div className="data-action-card">
+                  <h3>清空所有数据</h3>
+                  <p>永久删除所有本地数据，刷新页面后将重新加载演示数据。</p>
+                  <button className="danger-action" onClick={handleClearAllData}>
+                    清空所有数据
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {planModalOpen && (
         <div className="modal-overlay" onClick={closePlanModal}>

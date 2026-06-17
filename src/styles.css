@@ -1490,3 +1490,137 @@ button:disabled {
   color: #64748b;
   line-height: 1.6;
 }
+
+.loading-state {
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+  gap: 16px;
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.data-management-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  margin-bottom: 20px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(31, 41, 55, 0.06);
+}
+
+.data-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.data-info span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.data-info span::before {
+  content: "💾";
+  margin-right: 6px;
+}
+
+.data-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.secondary-action {
+  background: #ffffff;
+  color: #334155;
+  border-color: var(--border);
+  transition: all 0.2s ease;
+}
+
+.secondary-action:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.danger-action {
+  background: #ffffff;
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+  transition: all 0.2s ease;
+}
+
+.danger-action:hover {
+  background: color-mix(in srgb, var(--danger) 8%, #ffffff);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-warning {
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--warn) 12%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border-radius: 8px;
+  color: #92400e;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+.data-management-actions {
+  display: grid;
+  gap: 16px;
+}
+
+.data-action-card {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fafcff;
+  transition: all 0.2s ease;
+}
+
+.data-action-card:hover {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(31, 41, 55, 0.06);
+}
+
+.data-action-card h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+  color: #172033;
+}
+
+.data-action-card p {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+.data-action-card button {
+  width: 100%;
+}
