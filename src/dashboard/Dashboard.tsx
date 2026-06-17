@@ -139,12 +139,15 @@ export function Dashboard({
       const tankAlerts = alerts.filter(
         (a) => (a.tankId === tank.id || a.tankName === tank.name) && a.status === "pending"
       );
+      const allTankAlerts = alerts.filter(
+        (a) => a.tankId === tank.id || a.tankName === tank.name
+      );
 
       const riskAssessment = assessTankRisk({
         tank,
         records: sortedRecords,
         plans: tankPlans,
-        alerts: tankAlerts,
+        alerts: allTankAlerts,
       });
 
       map.set(tank.id, {

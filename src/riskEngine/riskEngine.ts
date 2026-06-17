@@ -262,12 +262,12 @@ function detectRetestStillAbnormal(
   const factors: RiskFactor[] = [];
   if (sortedRecords.length < 2) return factors;
 
-  const processedAlerts = alerts.filter(
+  const retestAlerts = alerts.filter(
     (a) => a.status === "processed" && a.treatment === "复测"
   );
 
   for (const metric of ALERT_METRIC_KEYS) {
-    const recentRecords = sortedRecords.slice(-3);
+    const recentRecords = sortedRecords.slice(-5);
     const abnormalRecords: WaterRecord[] = [];
 
     for (const rec of recentRecords) {
@@ -283,9 +283,38 @@ function detectRetestStillAbnormal(
       }
     }
 
-    if (abnormalRecords.length >= 2) {
-      const hasRetestAlert = processedAlerts.some((a) => a.metric === metric);
-      const isSevere = abnormalRecords.length >= 3 || hasRetestAlert;
+    const metricRetestAlerts = retestAlerts.filter((a) => a.metric === metric);
+    const hasRetest = metricRetestAlerts.length > 0;
+
+    let abnormalAfterRetestCount = 0;
+    if (hasRetest) {
+      const lastRetestTime = Math.max(
+        ...metricRetestAlerts.map((a) =>
+          new Date(a.processedAt || a.createdAt).getTime()
+        )
+      );
+      abnormalAfterRetestCount = abnormalRecords.filter(
+        (r) => new Date(r.recordedAt).getTime() >= lastRetestTime
+      ).length;
+    }
+
+    const meetsThreshold = abnormalRecords.length >= 2 || abnormalAfterRetestCount >= 1;
+    if (meetsThreshold) {
+      const isSevere =
+        abnormalRecords.length >= 3 ||
+        abnormalAfterRetestCount >= 1 ||
+        (hasRetest && abnormalRecords.length >= 2);
+
+      let evidenceParts: string[] = [];
+      if (hasRetest) {
+        evidenceParts.push(`复测${metricRetestAlerts.length}次`);
+        if (abnormalAfterRetestCount > 0) {
+          evidenceParts.push(`复测后仍有${abnormalAfterRetestCount}次异常`);
+        }
+      }
+      evidenceParts.push(
+        `近${recentRecords.length}次检测中有${abnormalRecords.length}次异常`
+      );
 
       factors.push({
         type: "retest_still_abnormal",
@@ -293,12 +322,12 @@ function detectRetestStillAbnormal(
         metric,
         metricLabel: METRIC_LABELS[metric],
         description: `${METRIC_LABELS[metric]}经过${
-          hasRetestAlert ? "复测" : "多次检测"
+          hasRetest ? "复测处理" : "多次检测"
         }后仍持续异常`,
         score: isSevere
           ? RISK_SCORE_CONFIG.retest_still_abnormal_severe
           : RISK_SCORE_CONFIG.retest_still_abnormal_mild,
-        evidence: `近${recentRecords.length}次中有${abnormalRecords.length}次异常`,
+        evidence: evidenceParts.join("，"),
       });
     }
   }
