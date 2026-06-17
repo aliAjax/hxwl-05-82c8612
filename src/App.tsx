@@ -16,6 +16,12 @@ import type {
 import { Dashboard } from "./dashboard";
 import { ImportWaterRecordsModal } from "./importCsv";
 import type { PreparedRecord } from "./importCsv";
+import {
+  WaterTestRecorder,
+  WaterChangeTaskManager,
+  AlertReminderPanel,
+  SyncControlPanel,
+} from "./offlineMaintenance";
 
 const project = {
   "id": "hxwl-05",
@@ -1255,6 +1261,28 @@ function App() {
           </div>
         </div>
       )}
+
+      <section className="offline-maintenance-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">📱 离线优先</p>
+            <h2>水族维护工作流（离线可用）</h2>
+            <p className="subtitle">
+              店员可在无网络场景下记录水质检测、生成异常提醒、完成换水任务，
+              恢复网络后点击「同步控制面板」一键同步。所有数据状态完整展示。
+            </p>
+          </div>
+        </div>
+
+        <SyncControlPanel />
+
+        <div className="offline-workflow-grid">
+          <WaterTestRecorder />
+          <WaterChangeTaskManager />
+        </div>
+
+        <AlertReminderPanel />
+      </section>
 
       <ImportWaterRecordsModal
         open={importModalOpen}
