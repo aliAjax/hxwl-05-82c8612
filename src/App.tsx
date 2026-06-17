@@ -14,6 +14,8 @@ import type {
   WaterChangePlan,
 } from "./db/types";
 import { Dashboard } from "./dashboard";
+import { ImportWaterRecordsModal } from "./importCsv";
+import type { PreparedRecord } from "./importCsv";
 
 const project = {
   "id": "hxwl-05",
@@ -267,8 +269,57 @@ function App() {
   const [planModalOpen, setPlanModalOpen] = useState(false);
   const [planFormData, setPlanFormData] = useState<Omit<WaterChangePlan, "id" | "createdAt">>(emptyPlanForm);
   const [planFilter, setPlanFilter] = useState<string>("全部");
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const planFilterOptions = ["全部", "已逾期", "即将到期", "正常", "已完成"];
+
+  const handleImportRecords = async (records: PreparedRecord[]) => {
+    const newRecords: WaterRecord[] = [];
+    const newAlerts: AlertItem[] = [];
+
+    for (const record of records) {
+      const newRecordData: Omit<WaterRecord, "id"> = {
+        tankName: record.tankName,
+        tankId: record.tankId,
+        recordedAt: record.recordedAt,
+        metrics: { ...record.metrics },
+        status: record.status,
+        note: record.note,
+      };
+      const newRecord = await dataService.addWaterRecord(newRecordData);
+      newRecords.push(newRecord);
+
+      const tankType = record.tankId
+        ? tanks.find((t) => t.id === record.tankId)?.tankType || "草缸"
+        : "草缸";
+      const recordAlerts = generateAlertsFromRecord(
+        newRecord.id,
+        record.tankName,
+        record.tankId,
+        tankType,
+        record.metrics as unknown as AlertMetricValues,
+        record.recordedAt
+      );
+      if (recordAlerts.length > 0) {
+        const savedAlerts = await dataService.addAlerts(
+          recordAlerts.map((a) => ({ ...a, id: undefined! } as Omit<AlertItem, "id">))
+        );
+        newAlerts.push(...savedAlerts);
+      }
+    }
+
+    setWaterRecords((prev) => {
+      const combined = [...newRecords, ...prev];
+      combined.sort(
+        (a, b) =>
+          new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()
+      );
+      return combined;
+    });
+    if (newAlerts.length > 0) {
+      setAlerts((prev) => [...newAlerts, ...prev]);
+    }
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -737,7 +788,12 @@ function App() {
             <p>水质历史</p>
             <h2>近期记录</h2>
           </div>
-          <button disabled={displayRecords.length === 0}>导出摘要</button>
+          <div className="records-actions">
+            <button className="secondary-action" onClick={() => setImportModalOpen(true)}>
+              📋 导入CSV
+            </button>
+            <button disabled={displayRecords.length === 0}>导出摘要</button>
+          </div>
         </div>
         {displayRecords.length === 0 ? (
           <div className="empty-state empty-state-compact">
@@ -1199,6 +1255,13 @@ function App() {
           </div>
         </div>
       )}
+
+      <ImportWaterRecordsModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        tanks={tanks}
+        onImport={handleImportRecords}
+      />
     </main>
   );
 }
