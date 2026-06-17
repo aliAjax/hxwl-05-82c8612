@@ -1,5 +1,14 @@
-import { useState, useMemo, useCallback } from "react";
-import { parseWaterRecordsCsv, FIELD_LABELS, SAMPLE_CSV } from "./csvParser";
+import { useState, useMemo, useCallback, Fragment } from "react";
+import {
+  parseWaterRecordsCsv,
+  FIELD_LABELS,
+  MISSING_DESCRIPTION,
+  MISSING_CATEGORY,
+  CATEGORY_LABEL,
+  getMissingFieldSummary,
+  SAMPLE_CSV,
+} from "./csvParser";
+import type { MissingFieldSummary } from "./csvParser";
 import type { ParseResult, ValidRow, ErrorRow, PreparedRecord } from "./types";
 import type { TankProfile, RecordStatus, WaterMetrics } from "../db/types";
 
@@ -161,8 +170,48 @@ export function ImportWaterRecordsModal({
 
   const totalMissingFields = useMemo(() => {
     if (!parseResult) return 0;
-    return parseResult.errorRows.reduce((sum, r) => sum + r.missingFields.length, 0);
+    const errorMissing = parseResult.errorRows.reduce(
+      (sum, r) => sum + r.missingFields.length,
+      0
+    );
+    const validMissing = parseResult.validRows.reduce(
+      (sum, r) => sum + r.missingFields.length,
+      0
+    );
+    return errorMissing + validMissing;
   }, [parseResult]);
+
+  const missingFieldSummary = useMemo((): MissingFieldSummary[] => {
+    if (!parseResult) return [];
+    return getMissingFieldSummary(parseResult);
+  }, [parseResult]);
+
+  const autoFillCount = useMemo(() => {
+    return missingFieldSummary
+      .filter((s) => s.category === "autoFill")
+      .reduce((sum, s) => sum + s.count, 0);
+  }, [missingFieldSummary]);
+
+  const emptyMetricCount = useMemo(() => {
+    return missingFieldSummary
+      .filter((s) => s.category === "empty")
+      .reduce((sum, s) => sum + s.count, 0);
+  }, [missingFieldSummary]);
+
+  const getMissingCategoryClass = (category: string): string => {
+    switch (category) {
+      case "required":
+        return "missing-cat-required";
+      case "autoFill":
+        return "missing-cat-autofill";
+      case "empty":
+        return "missing-cat-empty";
+      case "optional":
+        return "missing-cat-optional";
+      default:
+        return "";
+    }
+  };
 
   const getStatusClass = (status: RecordStatus) => {
     switch (status) {
@@ -267,6 +316,47 @@ export function ImportWaterRecordsModal({
                 )}
               </div>
 
+              {missingFieldSummary.length > 0 && (
+                <div className="missing-summary-bar">
+                  <div className="missing-summary-title">
+                    <span className="missing-summary-icon">ℹ️</span>
+                    <span>字段缺失说明</span>
+                  </div>
+                  <div className="missing-summary-list">
+                    {missingFieldSummary.map((item) => (
+                      <div
+                        key={item.field}
+                        className={`missing-summary-item ${getMissingCategoryClass(item.category)}`}
+                        title={item.description}
+                      >
+                        <span className="missing-item-label">{item.label}</span>
+                        <span className="missing-item-count">×{item.count}</span>
+                        <span className="missing-item-badge">
+                          {CATEGORY_LABEL[item.category] || item.category}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="missing-summary-desc">
+                    {autoFillCount > 0 && (
+                      <span className="missing-desc-item">
+                        <strong>自动填充：</strong>系统自动补充默认值，可正常导入
+                      </span>
+                    )}
+                    {emptyMetricCount > 0 && (
+                      <span className="missing-desc-item">
+                        <strong>无数据：</strong>该指标留空，不参与状态评估
+                      </span>
+                    )}
+                    {missingFieldSummary.some((s) => s.category === "required") && (
+                      <span className="missing-desc-item missing-desc-error">
+                        <strong>必填缺失：</strong>必须填写，对应行无法导入
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="preview-tabs">
                 <button
                   className={`preview-tab ${activeTab === "valid" ? "preview-tab-active" : ""}`}
@@ -317,23 +407,98 @@ export function ImportWaterRecordsModal({
                               row.data.remark
                             );
                             return (
-                              <tr key={row.rowIndex}>
-                                <td className="row-index">{row.rowIndex}</td>
-                                <td className="cell-strong">{row.data.tankName}</td>
-                                <td className="cell-muted">{row.data.recordedAt}</td>
-                                <td>{row.data.metrics.ph || "—"}</td>
-                                <td>{row.data.metrics.ammonia || "—"}</td>
-                                <td>{row.data.metrics.nitrite || "—"}</td>
-                                <td>{row.data.metrics.nitrate || "—"}</td>
-                                <td>{row.data.metrics.hardness || "—"}</td>
-                                <td>{row.data.metrics.temperature || "—"}</td>
-                                <td>
-                                  <span className={`preview-status ${getStatusClass(status)}`}>
-                                    {status}
-                                  </span>
-                                </td>
-                                <td className="cell-note">{note}</td>
-                              </tr>
+                              <Fragment key={row.rowIndex}>
+                                <tr>
+                                  <td className="row-index">{row.rowIndex}</td>
+                                  <td className="cell-strong">{row.data.tankName}</td>
+                                  <td
+                                    className={
+                                      row.missingFields.includes("recordedAt")
+                                        ? "cell-muted cell-missing cell-missing-autofill"
+                                        : "cell-muted"
+                                    }
+                                    title={
+                                      row.missingFields.includes("recordedAt")
+                                        ? MISSING_DESCRIPTION["recordedAt"]
+                                        : ""
+                                    }
+                                  >
+                                    <span className="cell-value">{row.data.recordedAt}</span>
+                                    {row.missingFields.includes("recordedAt") && (
+                                      <span className="cell-autofill-badge">自动填充</span>
+                                    )}
+                                  </td>
+                                  <td
+                                    className={row.missingFields.includes("ph") ? "cell-missing cell-metric" : ""}
+                                    title={row.missingFields.includes("ph") ? MISSING_DESCRIPTION["ph"] : ""}
+                                  >
+                                    {row.data.metrics.ph || <span className="cell-empty">— 未测</span>}
+                                  </td>
+                                  <td
+                                    className={row.missingFields.includes("ammonia") ? "cell-missing cell-metric" : ""}
+                                    title={row.missingFields.includes("ammonia") ? MISSING_DESCRIPTION["ammonia"] : ""}
+                                  >
+                                    {row.data.metrics.ammonia || <span className="cell-empty">— 未测</span>}
+                                  </td>
+                                  <td
+                                    className={row.missingFields.includes("nitrite") ? "cell-missing cell-metric" : ""}
+                                    title={row.missingFields.includes("nitrite") ? MISSING_DESCRIPTION["nitrite"] : ""}
+                                  >
+                                    {row.data.metrics.nitrite || <span className="cell-empty">— 未测</span>}
+                                  </td>
+                                  <td
+                                    className={row.missingFields.includes("nitrate") ? "cell-missing cell-metric" : ""}
+                                    title={row.missingFields.includes("nitrate") ? MISSING_DESCRIPTION["nitrate"] : ""}
+                                  >
+                                    {row.data.metrics.nitrate || <span className="cell-empty">— 未测</span>}
+                                  </td>
+                                  <td
+                                    className={row.missingFields.includes("hardness") ? "cell-missing cell-metric" : ""}
+                                    title={row.missingFields.includes("hardness") ? MISSING_DESCRIPTION["hardness"] : ""}
+                                  >
+                                    {row.data.metrics.hardness || <span className="cell-empty">— 未测</span>}
+                                  </td>
+                                  <td
+                                    className={row.missingFields.includes("temperature") ? "cell-missing cell-metric" : ""}
+                                    title={row.missingFields.includes("temperature") ? MISSING_DESCRIPTION["temperature"] : ""}
+                                  >
+                                    {row.data.metrics.temperature || <span className="cell-empty">— 未测</span>}
+                                  </td>
+                                  <td>
+                                    <span className={`preview-status ${getStatusClass(status)}`}>
+                                      {status}
+                                    </span>
+                                  </td>
+                                  <td className="cell-note">{note}</td>
+                                </tr>
+                                {row.missingFields.filter((f) => f !== "tankName").length > 0 && (
+                                  <tr className="valid-row-missing">
+                                    <td colSpan={11}>
+                                      <div className="missing-tag-group">
+                                        {row.missingFields
+                                          .filter((f) => f !== "tankName")
+                                          .map((field) => {
+                                            const label = FIELD_LABELS[field] || field;
+                                            const category =
+                                              (MISSING_CATEGORY as Record<string, string>)[field] || "optional";
+                                            const description =
+                                              MISSING_DESCRIPTION[field] || "未填写";
+                                            return (
+                                              <span
+                                                key={field}
+                                                className={`missing-tag ${getMissingCategoryClass(category)}`}
+                                                title={description}
+                                              >
+                                                <span className="missing-tag-label">{label}</span>
+                                                <span className="missing-tag-desc">{description}</span>
+                                              </span>
+                                            );
+                                          })}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
                             );
                           })}
                         </tbody>
@@ -352,11 +517,38 @@ export function ImportWaterRecordsModal({
                         <div className="error-card-header">
                           <span className="error-row-index">第 {row.rowIndex} 行</span>
                           {row.missingFields.length > 0 && (
-                            <span className="error-missing-tag">
-                              缺失: {row.missingFields.map((f) => FIELD_LABELS[f] || f).join(", ")}
+                            <span className="error-missing-count">
+                              缺失 {row.missingFields.length} 个字段
                             </span>
                           )}
                         </div>
+                        {row.missingFields.length > 0 && (
+                          <div className="error-missing-list">
+                            {row.missingFields.map((field) => {
+                              const label = FIELD_LABELS[field] || field;
+                              const category =
+                                (MISSING_CATEGORY as Record<string, string>)[field] || "optional";
+                              const description =
+                                MISSING_DESCRIPTION[field] || "未填写";
+                              return (
+                                <div
+                                  key={field}
+                                  className={`error-missing-item ${getMissingCategoryClass(category)}`}
+                                >
+                                  <span className="error-missing-name">
+                                    {label}
+                                  </span>
+                                  <span className="error-missing-badge">
+                                    {CATEGORY_LABEL[category as keyof typeof CATEGORY_LABEL] || category}
+                                  </span>
+                                  <span className="error-missing-desc">
+                                    {description}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                         <div className="error-raw-line">{row.rawLine}</div>
                         {row.errors.length > 0 && (
                           <ul className="error-details">

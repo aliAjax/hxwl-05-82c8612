@@ -242,10 +242,11 @@ export function parseWaterRecordsCsv(text: string): ParseResult {
     });
     
     if (!record.tankName.trim()) {
-      missingFields.push(LABEL_MAP.tankName);
+      missingFields.push("tankName");
     }
     
     if (!record.recordedAt.trim()) {
+      missingFields.push("recordedAt");
       const now = new Date();
       record.recordedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     } else {
@@ -256,6 +257,12 @@ export function parseWaterRecordsCsv(text: string): ParseResult {
         errors.push(`检测时间格式不正确: ${record.recordedAt}`);
       }
     }
+    
+    NUMERIC_FIELDS.forEach((field) => {
+      if (!record.metrics[field].trim()) {
+        missingFields.push(field);
+      }
+    });
     
     const hasAnyMetric = NUMERIC_FIELDS.some((k) => record.metrics[k].trim() !== "");
     if (!hasAnyMetric) {
@@ -283,7 +290,7 @@ export function parseWaterRecordsCsv(text: string): ParseResult {
       if (v < 0 || v > 50) errors.push("温度应在 0-50°C 范围内");
     }
     
-    if (missingFields.length > 0 || errors.length > 0) {
+    if (errors.length > 0 || missingFields.includes("tankName")) {
       errorRows.push({
         type: "error",
         rowIndex,
@@ -297,6 +304,7 @@ export function parseWaterRecordsCsv(text: string): ParseResult {
         rowIndex,
         rawLine,
         data: record,
+        missingFields,
       });
     }
   });
@@ -308,9 +316,90 @@ export function parseWaterRecordsCsv(text: string): ParseResult {
   };
 }
 
+type MissingCategory = "required" | "autoFill" | "empty" | "optional";
+
+const MISSING_CATEGORY: Record<string, MissingCategory> = {
+  tankName: "required",
+  recordedAt: "autoFill",
+  ph: "empty",
+  ammonia: "empty",
+  nitrite: "empty",
+  nitrate: "empty",
+  hardness: "empty",
+  temperature: "empty",
+  waterChange: "optional",
+  remark: "optional",
+};
+
+const MISSING_DESCRIPTION: Record<string, string> = {
+  tankName: "必填字段，不能为空",
+  recordedAt: "未填写，已自动填充为当前时间",
+  ph: "未填写，按无数据处理，不参与状态评估",
+  ammonia: "未填写，按无数据处理，不参与状态评估",
+  nitrite: "未填写，按无数据处理，不参与状态评估",
+  nitrate: "未填写，按无数据处理，不参与状态评估",
+  hardness: "未填写，按无数据处理，不参与状态评估",
+  temperature: "未填写，按无数据处理，不参与状态评估",
+  waterChange: "未填写",
+  remark: "未填写",
+};
+
+const CATEGORY_LABEL: Record<MissingCategory, string> = {
+  required: "必填",
+  autoFill: "自动填充",
+  empty: "无数据",
+  optional: "可选",
+};
+
+export { MISSING_DESCRIPTION, MISSING_CATEGORY, CATEGORY_LABEL };
+
 export const FIELD_LABELS = LABEL_MAP;
 
 export const SAMPLE_CSV = `鱼缸名称,检测时间,pH,氨氮,亚硝酸盐,硝酸盐,硬度,温度,备注
 草缸A,2026-06-15 09:30,6.8,0,0,18,8,26,正常稳定
 海缸B,2026-06-15 10:00,8.1,0.02,0.01,5,12,27,钙硬度偏低
 繁殖缸C,2026-06-15 14:20,7.2,0.1,0.3,25,6,28,亚硝酸盐升高`;
+
+export interface MissingFieldSummary {
+  field: string;
+  label: string;
+  category: MissingCategory;
+  description: string;
+  count: number;
+}
+
+export function getMissingFieldSummary(result: ParseResult): MissingFieldSummary[] {
+  const fieldCounts = new Map<string, number>();
+
+  const allRows = [
+    ...result.validRows.map((r) => r.missingFields),
+    ...result.errorRows.map((r) => r.missingFields),
+  ];
+
+  for (const missingFields of allRows) {
+    for (const field of missingFields) {
+      fieldCounts.set(field, (fieldCounts.get(field) || 0) + 1);
+    }
+  }
+
+  const summary: MissingFieldSummary[] = [];
+  for (const [field, count] of fieldCounts.entries()) {
+    summary.push({
+      field,
+      label: LABEL_MAP[field] || field,
+      category: MISSING_CATEGORY[field] || "optional",
+      description: MISSING_DESCRIPTION[field] || "未填写",
+      count,
+    });
+  }
+
+  const order: MissingCategory[] = ["required", "autoFill", "empty", "optional"];
+  summary.sort((a, b) => {
+    const aOrder = order.indexOf(a.category);
+    const bOrder = order.indexOf(b.category);
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return b.count - a.count;
+  });
+
+  return summary;
+}

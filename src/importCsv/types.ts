@@ -12,6 +12,7 @@ export interface ValidRow {
   rowIndex: number;
   rawLine: string;
   data: ParsedWaterRecord;
+  missingFields: string[];
 }
 
 export interface ErrorRow {
