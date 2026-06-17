@@ -1,7 +1,7 @@
 import { STORE_NAMES, type StoreName } from "./types";
 
 const DB_NAME = "aquarium_water_db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export class Database {
   private db: IDBDatabase | null = null;
@@ -23,10 +23,28 @@ export class Database {
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
 
+        if (!db.objectStoreNames.contains("customers")) {
+          const customerStore = db.createObjectStore("customers", { keyPath: "id" });
+          customerStore.createIndex("name", "name", { unique: false });
+          customerStore.createIndex("maintainer", "maintainer", { unique: false });
+        }
+
         if (!db.objectStoreNames.contains("tanks")) {
           const tankStore = db.createObjectStore("tanks", { keyPath: "id" });
           tankStore.createIndex("tankType", "tankType", { unique: false });
           tankStore.createIndex("name", "name", { unique: false });
+          tankStore.createIndex("customerId", "customerId", { unique: false });
+          tankStore.createIndex("maintainer", "maintainer", { unique: false });
+        } else {
+          const tankTxn = (event.target as IDBOpenDBRequest).transaction?.objectStore("tanks");
+          if (tankTxn) {
+            if (!tankTxn.indexNames.contains("customerId")) {
+              tankTxn.createIndex("customerId", "customerId", { unique: false });
+            }
+            if (!tankTxn.indexNames.contains("maintainer")) {
+              tankTxn.createIndex("maintainer", "maintainer", { unique: false });
+            }
+          }
         }
 
         if (!db.objectStoreNames.contains("waterRecords")) {

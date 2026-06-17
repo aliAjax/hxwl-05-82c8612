@@ -1,6 +1,6 @@
 import { db } from "./database";
 import { generateSeedData, hasSeedDataBeenLoaded, markSeedDataAsLoaded } from "./seedData";
-import type { TankProfile, WaterRecord, WaterChangePlan, AppData } from "./types";
+import type { TankProfile, WaterRecord, WaterChangePlan, AppData, Customer } from "./types";
 import type { AlertItem } from "../alertCenter/types";
 
 export class DataService {
@@ -24,6 +24,7 @@ export class DataService {
 
   private async loadSeedData(): Promise<void> {
     const seed = generateSeedData();
+    await db.bulkAdd("customers", seed.customers);
     await db.bulkAdd("tanks", seed.tanks);
     await db.bulkAdd("waterRecords", seed.waterRecords);
     await db.bulkAdd("waterChangePlans", seed.waterChangePlans);
@@ -31,13 +32,44 @@ export class DataService {
   }
 
   async getAllData(): Promise<AppData> {
-    const [tanks, waterRecords, waterChangePlans, alerts] = await Promise.all([
+    const [customers, tanks, waterRecords, waterChangePlans, alerts] = await Promise.all([
+      this.getCustomers(),
       this.getTanks(),
       this.getWaterRecords(),
       this.getWaterChangePlans(),
       this.getAlerts(),
     ]);
-    return { tanks, waterRecords, waterChangePlans, alerts };
+    return { customers, tanks, waterRecords, waterChangePlans, alerts };
+  }
+
+  async getCustomers(): Promise<Customer[]> {
+    const customers = await db.getAll<Customer>("customers");
+    return customers.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getCustomer(id: string): Promise<Customer | undefined> {
+    return db.get<Customer>("customers", id);
+  }
+
+  async addCustomer(customer: Omit<Customer, "id" | "createdAt">): Promise<Customer> {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const createdAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const newCustomer: Customer = {
+      ...customer,
+      id: Date.now().toString(),
+      createdAt,
+    };
+    await db.add("customers", newCustomer);
+    return newCustomer;
+  }
+
+  async updateCustomer(customer: Customer): Promise<void> {
+    await db.put("customers", customer);
+  }
+
+  async deleteCustomer(id: string): Promise<void> {
+    await db.delete("customers", id);
   }
 
   async getTanks(): Promise<TankProfile[]> {

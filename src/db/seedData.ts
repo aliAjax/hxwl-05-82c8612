@@ -1,6 +1,6 @@
 import type { TankProfile, WaterRecord, WaterChangePlan } from "../App";
 import type { AlertItem } from "../alertCenter/types";
-import type { WaterMetrics } from "./types";
+import type { WaterMetrics, Customer } from "./types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -118,58 +118,108 @@ function evaluateRecordStatus(metrics: WaterMetrics): {
 }
 
 export function generateSeedData() {
+  const customers: Customer[] = [
+    {
+      id: "customer-seed-001",
+      name: "陈先生",
+      phone: "138****1234",
+      address: "朝阳区望京SOHO T1",
+      maintainer: "李师傅",
+      createdAt: formatDateTime(daysAgo(90)),
+    },
+    {
+      id: "customer-seed-002",
+      name: "海洋水族会所",
+      phone: "010-8888****",
+      address: "海淀区中关村大街1号",
+      maintainer: "王师傅",
+      createdAt: formatDateTime(daysAgo(120)),
+    },
+    {
+      id: "customer-seed-003",
+      name: "刘女士",
+      phone: "139****5678",
+      address: "西城区金融街购物中心B1",
+      maintainer: "张师傅",
+      createdAt: formatDateTime(daysAgo(60)),
+    },
+    {
+      id: "customer-seed-004",
+      name: "三湖乐园",
+      phone: "136****9012",
+      address: "东城区东直门南大街",
+      maintainer: "赵师傅",
+      createdAt: formatDateTime(daysAgo(150)),
+    },
+  ];
+
   const tanks: TankProfile[] = [
     {
       id: "tank-seed-001",
-      name: "草缸A",
+      name: "客厅草缸",
       tankType: "草缸",
       capacity: "60L",
       setupDate: "2024-03-15",
       mainCreatures: "红绿灯、宝莲灯、迷你矮珍珠、莫斯",
       maintainer: "李师傅",
+      customerId: "customer-seed-001",
     },
     {
       id: "tank-seed-002",
-      name: "海缸B",
+      name: "旗舰展示海缸",
       tankType: "海缸",
       capacity: "120L",
       setupDate: "2024-01-20",
       mainCreatures: "公子小丑、蓝吊、火柴头、纽扣珊瑚",
       maintainer: "王师傅",
+      customerId: "customer-seed-002",
     },
     {
       id: "tank-seed-003",
-      name: "繁殖缸C",
+      name: "办公室繁殖缸",
       tankType: "繁殖缸",
       capacity: "40L",
       setupDate: "2024-05-10",
       mainCreatures: "孔雀鱼、玛丽鱼、繁殖盒",
       maintainer: "张师傅",
+      customerId: "customer-seed-003",
     },
     {
       id: "tank-seed-004",
-      name: "三湖缸D",
+      name: "萨伊蓝主缸",
       tankType: "三湖缸",
       capacity: "180L",
       setupDate: "2023-11-05",
       mainCreatures: "萨伊蓝、六间、马鲷、珍珠虎",
       maintainer: "赵师傅",
+      customerId: "customer-seed-004",
     },
     {
       id: "tank-seed-005",
-      name: "草缸E",
+      name: "卧室草缸",
       tankType: "草缸",
       capacity: "90L",
       setupDate: "2024-02-28",
       mainCreatures: "一眉道人、红鼻剪刀、挖耳草、牛毛毡",
       maintainer: "李师傅",
+      customerId: "customer-seed-001",
+    },
+    {
+      id: "tank-seed-006",
+      name: "VIP室海缸",
+      tankType: "海缸",
+      capacity: "200L",
+      setupDate: "2024-04-10",
+      mainCreatures: "黄金吊、火焰仙、脑珊瑚、气泡珊瑚",
+      maintainer: "王师傅",
+      customerId: "customer-seed-002",
     },
   ];
 
   const waterRecords: WaterRecord[] = [
     {
       id: "record-seed-001",
-      tankName: "草缸A",
+      tankName: "客厅草缸",
       tankId: "tank-seed-001",
       recordedAt: formatDateTime(daysAgo(0)),
       metrics: createWaterMetrics({
@@ -193,7 +243,7 @@ export function generateSeedData() {
     },
     {
       id: "record-seed-002",
-      tankName: "海缸B",
+      tankName: "旗舰展示海缸",
       tankId: "tank-seed-002",
       recordedAt: formatDateTime(daysAgo(1)),
       metrics: createWaterMetrics({
@@ -219,7 +269,7 @@ export function generateSeedData() {
     },
     {
       id: "record-seed-003",
-      tankName: "繁殖缸C",
+      tankName: "办公室繁殖缸",
       tankId: "tank-seed-003",
       recordedAt: formatDateTime(daysAgo(2)),
       metrics: createWaterMetrics({
@@ -243,7 +293,7 @@ export function generateSeedData() {
     },
     {
       id: "record-seed-004",
-      tankName: "三湖缸D",
+      tankName: "萨伊蓝主缸",
       tankId: "tank-seed-004",
       recordedAt: formatDateTime(daysAgo(3)),
       metrics: createWaterMetrics({
@@ -267,7 +317,7 @@ export function generateSeedData() {
     },
     {
       id: "record-seed-005",
-      tankName: "草缸E",
+      tankName: "卧室草缸",
       tankId: "tank-seed-005",
       recordedAt: formatDateTime(daysAgo(4)),
       metrics: createWaterMetrics({
@@ -291,12 +341,86 @@ export function generateSeedData() {
         })
       ),
     },
+    {
+      id: "record-seed-006",
+      tankName: "VIP室海缸",
+      tankId: "tank-seed-006",
+      recordedAt: formatDateTime(daysAgo(5)),
+      metrics: createWaterMetrics({
+        ph: "8.2",
+        ammonia: "0",
+        nitrite: "0",
+        nitrate: "5",
+        hardness: "11",
+        temperature: "26.5",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "8.2",
+          ammonia: "0",
+          nitrite: "0",
+          nitrate: "5",
+          hardness: "11",
+          temperature: "26.5",
+        })
+      ),
+    },
+    {
+      id: "record-seed-007",
+      tankName: "客厅草缸",
+      tankId: "tank-seed-001",
+      recordedAt: formatDateTime(daysAgo(7)),
+      metrics: createWaterMetrics({
+        ph: "6.9",
+        ammonia: "0",
+        nitrite: "0",
+        nitrate: "15",
+        hardness: "8",
+        temperature: "25.0",
+        waterChange: "25%",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "6.9",
+          ammonia: "0",
+          nitrite: "0",
+          nitrate: "15",
+          hardness: "8",
+          temperature: "25.0",
+          waterChange: "25%",
+        })
+      ),
+    },
+    {
+      id: "record-seed-008",
+      tankName: "客厅草缸",
+      tankId: "tank-seed-001",
+      recordedAt: formatDateTime(daysAgo(14)),
+      metrics: createWaterMetrics({
+        ph: "6.7",
+        ammonia: "0",
+        nitrite: "0",
+        nitrate: "20",
+        hardness: "7",
+        temperature: "24.5",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "6.7",
+          ammonia: "0",
+          nitrite: "0",
+          nitrate: "20",
+          hardness: "7",
+          temperature: "24.5",
+        })
+      ),
+    },
   ];
 
   const waterChangePlans: WaterChangePlan[] = [
     {
       id: "plan-seed-001",
-      tankName: "草缸A",
+      tankName: "客厅草缸",
       tankId: "tank-seed-001",
       cycleDays: "7",
       waterRatio: "30",
@@ -306,7 +430,7 @@ export function generateSeedData() {
     },
     {
       id: "plan-seed-002",
-      tankName: "海缸B",
+      tankName: "旗舰展示海缸",
       tankId: "tank-seed-002",
       cycleDays: "14",
       waterRatio: "20",
@@ -316,7 +440,7 @@ export function generateSeedData() {
     },
     {
       id: "plan-seed-003",
-      tankName: "繁殖缸C",
+      tankName: "办公室繁殖缸",
       tankId: "tank-seed-003",
       cycleDays: "5",
       waterRatio: "25",
@@ -326,7 +450,7 @@ export function generateSeedData() {
     },
     {
       id: "plan-seed-004",
-      tankName: "三湖缸D",
+      tankName: "萨伊蓝主缸",
       tankId: "tank-seed-004",
       cycleDays: "10",
       waterRatio: "25",
@@ -336,7 +460,7 @@ export function generateSeedData() {
     },
     {
       id: "plan-seed-005",
-      tankName: "草缸E",
+      tankName: "卧室草缸",
       tankId: "tank-seed-005",
       cycleDays: "7",
       waterRatio: "30",
@@ -345,12 +469,22 @@ export function generateSeedData() {
       completedAt: formatDateTime(daysAgo(0)),
       createdAt: formatDateTime(daysAgo(7)),
     },
+    {
+      id: "plan-seed-006",
+      tankName: "VIP室海缸",
+      tankId: "tank-seed-006",
+      cycleDays: "14",
+      waterRatio: "15",
+      nextDate: formatDate(daysLater(9)),
+      note: "VIP客户重点照顾，注意珊瑚状态",
+      createdAt: formatDateTime(daysAgo(14)),
+    },
   ];
 
   const alerts: AlertItem[] = [
     {
       id: "alert-seed-001",
-      tankName: "繁殖缸C",
+      tankName: "办公室繁殖缸",
       tankId: "tank-seed-003",
       tankType: "繁殖缸",
       metric: "nitrite",
@@ -367,7 +501,7 @@ export function generateSeedData() {
     },
     {
       id: "alert-seed-002",
-      tankName: "繁殖缸C",
+      tankName: "办公室繁殖缸",
       tankId: "tank-seed-003",
       tankType: "繁殖缸",
       metric: "nitrate",
@@ -384,7 +518,7 @@ export function generateSeedData() {
     },
     {
       id: "alert-seed-003",
-      tankName: "三湖缸D",
+      tankName: "萨伊蓝主缸",
       tankId: "tank-seed-004",
       tankType: "三湖缸",
       metric: "hardness",
@@ -401,10 +535,10 @@ export function generateSeedData() {
     },
   ];
 
-  return { tanks, waterRecords, waterChangePlans, alerts };
+  return { customers, tanks, waterRecords, waterChangePlans, alerts };
 }
 
-export const SEED_DATA_CHECK_KEY = "aquarium_seed_data_v1";
+export const SEED_DATA_CHECK_KEY = "aquarium_seed_data_v2";
 
 export function hasSeedDataBeenLoaded(): boolean {
   return localStorage.getItem(SEED_DATA_CHECK_KEY) === "true";

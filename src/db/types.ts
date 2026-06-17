@@ -15,18 +15,29 @@ export interface WaterMetrics {
 
 export type PlanStatus = "normal" | "upcoming" | "overdue" | "completed";
 
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  maintainer: string;
+  createdAt: string;
+}
+
 export type { TankProfile, WaterRecord, WaterChangePlan, AlertItem };
 
 export interface AppData {
+  customers: Customer[];
   tanks: TankProfile[];
   waterRecords: WaterRecord[];
   waterChangePlans: WaterChangePlan[];
   alerts: AlertItem[];
 }
 
-export type StoreName = "tanks" | "waterRecords" | "waterChangePlans" | "alerts";
+export type StoreName = "customers" | "tanks" | "waterRecords" | "waterChangePlans" | "alerts";
 
 export const STORE_NAMES: StoreName[] = [
+  "customers",
   "tanks",
   "waterRecords",
   "waterChangePlans",

@@ -4,6 +4,8 @@ import { WaterTrendAnalysis, mockDataSource } from "./trend";
 import { AlertCenter, generateAlertsFromRecord } from "./alertCenter/AlertCenter";
 import { AlertItem, TreatmentAction, AlertMetricValues } from "./alertCenter/types";
 import { dataService } from "./db";
+import type { Customer } from "./db/types";
+import { Dashboard } from "./dashboard";
 
 const project = {
   "id": "hxwl-05",
@@ -121,6 +123,7 @@ interface TankProfile {
   setupDate: string;
   mainCreatures: string;
   maintainer: string;
+  customerId?: string;
 }
 
 type PlanStatus = "normal" | "upcoming" | "overdue" | "completed";
@@ -268,6 +271,7 @@ function App() {
     return String(base + index * 3);
   });
 
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [tanks, setTanks] = useState<TankProfile[]>([]);
   const [activeFilter, setActiveFilter] = useState<string>("全部");
   const [modalOpen, setModalOpen] = useState(false);
@@ -301,6 +305,7 @@ function App() {
       try {
         await dataService.init();
         const data = await dataService.getAllData();
+        setCustomers(data.customers);
         setTanks(data.tanks);
         setWaterRecords(data.waterRecords);
         setWaterChangePlans(data.waterChangePlans);
@@ -553,6 +558,7 @@ function App() {
     setIsLoading(true);
     try {
       const data = await dataService.clearAllData();
+      setCustomers(data.customers);
       setTanks(data.tanks);
       setWaterRecords(data.waterRecords);
       setWaterChangePlans(data.waterChangePlans);
@@ -574,6 +580,7 @@ function App() {
     setIsLoading(true);
     try {
       const data = await dataService.resetToSeedData();
+      setCustomers(data.customers);
       setTanks(data.tanks);
       setWaterRecords(data.waterRecords);
       setWaterChangePlans(data.waterChangePlans);
@@ -801,6 +808,15 @@ function App() {
       />
 
       <WaterTrendAnalysis dataSource={mockDataSource} />
+
+      <Dashboard
+        customers={customers}
+        tanks={tanks}
+        waterRecords={waterRecords}
+        waterChangePlans={waterChangePlans}
+        alerts={alerts}
+        tankTypes={TANK_TYPES}
+      />
 
       <section className="tank-profiles panel">
         <div className="section-heading">
