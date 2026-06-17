@@ -1,6 +1,8 @@
 import { useState, useMemo } from "react";
 import "./styles.css";
 import { WaterTrendAnalysis, mockDataSource } from "./trend";
+import { AlertCenter, generateAlertsFromRecord } from "./alertCenter/AlertCenter";
+import { AlertItem, TreatmentAction, AlertMetricValues } from "./alertCenter/types";
 
 const project = {
   "id": "hxwl-05",
@@ -335,6 +337,7 @@ function App() {
   const [selectedTankForRecord, setSelectedTankForRecord] = useState<string>("");
   const [customTankName, setCustomTankName] = useState<string>("");
   const [waterRecords, setWaterRecords] = useState<WaterRecord[]>([]);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
 
   const updateWaterForm = (key: keyof WaterMetrics, value: string) => {
     setWaterFormData((prev) => ({ ...prev, [key]: value }));
@@ -370,6 +373,22 @@ function App() {
       note,
     };
     setWaterRecords((prev) => [newRecord, ...prev]);
+
+    const tankType = selectedTankForRecord
+      ? tanks.find((t) => t.id === selectedTankForRecord)?.tankType || "草缸"
+      : "草缸";
+    const newAlerts = generateAlertsFromRecord(
+      newRecord.id,
+      tankName,
+      selectedTankForRecord || undefined,
+      tankType,
+      waterFormData as unknown as AlertMetricValues,
+      recordedAt
+    );
+    if (newAlerts.length > 0) {
+      setAlerts((prev) => [...newAlerts, ...prev]);
+    }
+
     setWaterFormData(emptyWaterMetrics);
     setSelectedTankForRecord("");
     setCustomTankName("");
@@ -403,6 +422,34 @@ function App() {
   const displayRecords = useMemo(() => {
     return [...waterRecords];
   }, [waterRecords]);
+
+  const pendingAlertCount = useMemo(() => {
+    return alerts.filter((a) => a.status === "pending").length;
+  }, [alerts]);
+
+  const handleProcessAlert = (
+    alertId: string,
+    treatment: TreatmentAction,
+    treatmentNote: string,
+    handler: string
+  ) => {
+    setAlerts((prev) =>
+      prev.map((a) => {
+        if (a.id !== alertId) return a;
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const processedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        return {
+          ...a,
+          status: "processed" as const,
+          treatment,
+          treatmentNote,
+          handler,
+          processedAt,
+        };
+      })
+    );
+  };
 
   const [waterChangePlans, setWaterChangePlans] = useState<WaterChangePlan[]>([]);
   const [planModalOpen, setPlanModalOpen] = useState(false);
@@ -694,6 +741,12 @@ function App() {
           </div>
         )}
       </section>
+
+      <AlertCenter
+        alerts={alerts}
+        onProcessAlert={handleProcessAlert}
+        pendingCount={pendingAlertCount}
+      />
 
       <WaterTrendAnalysis dataSource={mockDataSource} />
 
