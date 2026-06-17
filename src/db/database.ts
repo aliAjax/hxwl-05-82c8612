@@ -140,6 +140,11 @@ export class Database {
     await Promise.all(promises);
   }
 
+  async reset(): Promise<void> {
+    this.close();
+    await this.init();
+  }
+
   async bulkAdd<T>(storeName: StoreName, items: T[]): Promise<void> {
     if (items.length === 0) return;
     await this.ensureInitialized();

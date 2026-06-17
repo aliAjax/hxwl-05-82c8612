@@ -1,5 +1,5 @@
 import { db } from "./database";
-import { SEED_DATA, hasSeedDataBeenLoaded, markSeedDataAsLoaded, clearSeedDataFlag } from "./seedData";
+import { generateSeedData, hasSeedDataBeenLoaded, markSeedDataAsLoaded, clearSeedDataFlag } from "./seedData";
 import type { TankProfile, WaterRecord, WaterChangePlan, AppData } from "./types";
 import type { AlertItem } from "../alertCenter/types";
 
@@ -9,22 +9,21 @@ export class DataService {
   async init(): Promise<void> {
     if (this.initialized) return;
     await db.init();
+
     if (!hasSeedDataBeenLoaded()) {
-      const existingData = await this.getAllData();
-      const isEmpty = Object.values(existingData).every((arr) => arr.length === 0);
-      if (isEmpty) {
-        await this.loadSeedData();
-      }
+      await this.loadSeedData();
       markSeedDataAsLoaded();
     }
+
     this.initialized = true;
   }
 
   private async loadSeedData(): Promise<void> {
-    await db.bulkAdd("tanks", SEED_DATA.tanks);
-    await db.bulkAdd("waterRecords", SEED_DATA.waterRecords);
-    await db.bulkAdd("waterChangePlans", SEED_DATA.waterChangePlans);
-    await db.bulkAdd("alerts", SEED_DATA.alerts);
+    const seed = generateSeedData();
+    await db.bulkAdd("tanks", seed.tanks);
+    await db.bulkAdd("waterRecords", seed.waterRecords);
+    await db.bulkAdd("waterChangePlans", seed.waterChangePlans);
+    await db.bulkAdd("alerts", seed.alerts);
   }
 
   async getAllData(): Promise<AppData> {
@@ -218,17 +217,24 @@ export class DataService {
     await db.delete("alerts", id);
   }
 
-  async clearAllData(): Promise<void> {
+  async clearAllData(): Promise<AppData> {
     await db.clearAll();
     clearSeedDataFlag();
-    this.initialized = false;
+    await db.reset();
+    await this.loadSeedData();
+    markSeedDataAsLoaded();
+    this.initialized = true;
+    return this.getAllData();
   }
 
-  async resetToSeedData(): Promise<void> {
+  async resetToSeedData(): Promise<AppData> {
     await db.clearAll();
     clearSeedDataFlag();
-    this.initialized = false;
-    await this.init();
+    await db.reset();
+    await this.loadSeedData();
+    markSeedDataAsLoaded();
+    this.initialized = true;
+    return this.getAllData();
   }
 }
 

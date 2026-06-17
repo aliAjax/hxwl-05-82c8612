@@ -546,22 +546,20 @@ function App() {
   }, [waterChangePlans, planFilter]);
 
   const handleClearAllData = async () => {
-    if (!window.confirm("确定要清空所有演示数据吗？此操作不可恢复。")) {
+    if (!window.confirm("确定要清空并重置所有数据吗？将恢复为初始演示数据。")) {
       setClearConfirmOpen(false);
       return;
     }
     setIsLoading(true);
     try {
-      await dataService.clearAllData();
-      setTanks([]);
-      setWaterRecords([]);
-      setWaterChangePlans([]);
-      setAlerts([]);
-      alert("所有数据已清空，刷新页面后将重新加载演示数据。");
+      const data = await dataService.clearAllData();
+      setTanks(data.tanks);
+      setWaterRecords(data.waterRecords);
+      setWaterChangePlans(data.waterChangePlans);
+      setAlerts(data.alerts);
       setClearConfirmOpen(false);
     } catch (error) {
       console.error("Failed to clear data:", error);
-      alert("清空数据失败，请重试。");
     } finally {
       setIsLoading(false);
     }
@@ -574,8 +572,7 @@ function App() {
     }
     setIsLoading(true);
     try {
-      await dataService.resetToSeedData();
-      const data = await dataService.getAllData();
+      const data = await dataService.resetToSeedData();
       setTanks(data.tanks);
       setWaterRecords(data.waterRecords);
       setWaterChangePlans(data.waterChangePlans);
@@ -583,7 +580,6 @@ function App() {
       setClearConfirmOpen(false);
     } catch (error) {
       console.error("Failed to reload seed data:", error);
-      alert("重置数据失败，请重试。");
     } finally {
       setIsLoading(false);
     }
@@ -1029,16 +1025,16 @@ function App() {
               <div className="data-management-actions">
                 <div className="data-action-card">
                   <h3>重置为演示数据</h3>
-                  <p>将所有数据恢复为初始演示状态，当前数据将被替换。</p>
+                  <p>清空当前数据并重新加载初始演示数据，日期将更新为当前时间。</p>
                   <button className="secondary-action" onClick={handleReloadSeedData}>
                     重置演示数据
                   </button>
                 </div>
                 <div className="data-action-card">
-                  <h3>清空所有数据</h3>
-                  <p>永久删除所有本地数据，刷新页面后将重新加载演示数据。</p>
+                  <h3>清空并重置</h3>
+                  <p>清空所有数据后立即恢复为初始演示状态，无需手动刷新。</p>
                   <button className="danger-action" onClick={handleClearAllData}>
-                    清空所有数据
+                    清空并重置
                   </button>
                 </div>
               </div>
