@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   offlineSyncStore,
   syncEngine,
@@ -34,6 +34,41 @@ export function WaterChangeTaskManager({ onTaskCreated }: WaterChangeTaskManager
   const refreshData = () => {
     setTasks(offlineSyncStore.getTasks());
     setPlans(offlineSyncStore.getWaterPlans());
+  };
+
+  useEffect(() => {
+    return offlineSyncStore.subscribe(refreshData);
+  }, []);
+
+  const buildUpdatedSyncMeta = (task: MaintenanceTask) => {
+    if (task.syncMeta.syncStatus === "synced") {
+      return {
+        ...task.syncMeta,
+        syncStatus: "pending" as const,
+        pendingOperation: "update" as const,
+      };
+    }
+    if (task.syncMeta.syncStatus === "draft" || task.syncMeta.syncStatus === "failed") {
+      return {
+        ...task.syncMeta,
+        syncStatus: "pending" as const,
+        pendingOperation: task.syncMeta.pendingOperation || ("update" as const),
+        syncError: undefined,
+      };
+    }
+    return task.syncMeta;
+  };
+
+  const queueTaskUpdate = (taskId: string) => {
+    const updatedTask = offlineSyncStore.getTasks().find((t) => t.id === taskId);
+    if (updatedTask && updatedTask.syncMeta.syncStatus === "pending") {
+      offlineSyncStore.addToQueue(
+        "maintenanceTask",
+        taskId,
+        updatedTask.syncMeta.pendingOperation || "update",
+        updatedTask
+      );
+    }
   };
 
   const handleCreateTask = (e: React.FormEvent) => {
@@ -76,20 +111,13 @@ export function WaterChangeTaskManager({ onTaskCreated }: WaterChangeTaskManager
   const handleStartTask = (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
-    const updatedSyncMeta = task.syncMeta.syncStatus === "synced"
-      ? { ...task.syncMeta, syncStatus: "pending" as const, pendingOperation: "update" as const }
-      : task.syncMeta;
+    const updatedSyncMeta = buildUpdatedSyncMeta(task);
     offlineSyncStore.saveTask({
       ...task,
       status: "inProgress",
       syncMeta: updatedSyncMeta,
     });
-    if (updatedSyncMeta.syncStatus === "pending") {
-      const updatedTask = offlineSyncStore.getTasks().find((t) => t.id === taskId);
-      if (updatedTask) {
-        offlineSyncStore.addToQueue("maintenanceTask", taskId, "update", updatedTask);
-      }
-    }
+    queueTaskUpdate(taskId);
     refreshData();
   };
 
@@ -100,9 +128,7 @@ export function WaterChangeTaskManager({ onTaskCreated }: WaterChangeTaskManager
     const pad = (n: number) => String(n).padStart(2, "0");
     const completedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
-    const updatedSyncMeta = task.syncMeta.syncStatus === "synced"
-      ? { ...task.syncMeta, syncStatus: "pending" as const, pendingOperation: "update" as const }
-      : task.syncMeta;
+    const updatedSyncMeta = buildUpdatedSyncMeta(task);
 
     offlineSyncStore.saveTask({
       ...task,
@@ -110,12 +136,7 @@ export function WaterChangeTaskManager({ onTaskCreated }: WaterChangeTaskManager
       completedAt,
       syncMeta: updatedSyncMeta,
     });
-    if (updatedSyncMeta.syncStatus === "pending") {
-      const updatedTask = offlineSyncStore.getTasks().find((t) => t.id === taskId);
-      if (updatedTask) {
-        offlineSyncStore.addToQueue("maintenanceTask", taskId, "update", updatedTask);
-      }
-    }
+    queueTaskUpdate(taskId);
     refreshData();
   };
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   offlineSyncStore,
   type OfflineAlert,
@@ -14,6 +14,10 @@ export function AlertReminderPanel() {
   const refresh = () => {
     setAlerts(offlineSyncStore.getAlerts());
   };
+
+  useEffect(() => {
+    return offlineSyncStore.subscribe(refresh);
+  }, []);
 
   const handleProcess = (alertId: string) => {
     const alert = alerts.find((a) => a.id === alertId);

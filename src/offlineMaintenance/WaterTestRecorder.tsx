@@ -102,6 +102,10 @@ export function WaterTestRecorder({ onRecordCreated }: WaterTestRecorderProps) {
     setRecords(offlineSyncStore.getWaterRecords());
   };
 
+  useEffect(() => {
+    return offlineSyncStore.subscribe(refreshRecords);
+  }, []);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.tankName.trim()) {

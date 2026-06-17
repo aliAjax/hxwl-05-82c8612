@@ -117,6 +117,25 @@ class OfflineSyncStore {
     data: unknown
   ): SyncQueueItem {
     const queue = this.getSyncQueue();
+    const existingIndex = queue.findIndex(
+      (q) => q.entityType === entityType && q.entityId === entityId && q.status !== "conflict"
+    );
+
+    if (existingIndex !== -1) {
+      const existing = queue[existingIndex];
+      const item: SyncQueueItem = {
+        ...existing,
+        operation: existing.operation === "create" ? "create" : operation,
+        data,
+        status: existing.status === "failed" ? "queued" : existing.status,
+        errorMessage: existing.status === "failed" ? undefined : existing.errorMessage,
+      };
+      queue.splice(existingIndex, 1);
+      queue.unshift(item);
+      this.saveSyncQueue(queue);
+      return item;
+    }
+
     const item: SyncQueueItem = {
       id: generateId(),
       entityType,
