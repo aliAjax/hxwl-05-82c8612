@@ -1,5 +1,7 @@
 import type { TankDashboardInfo } from "./types";
 import type { WaterRecord, WaterMetrics } from "../db/types";
+import type { RiskFactor, RiskLevel } from "../riskEngine";
+import { getRiskLevelColor } from "../riskEngine";
 
 interface TankDetailPanelProps {
   info: TankDashboardInfo;
@@ -25,8 +27,26 @@ const METRIC_UNITS: Record<keyof Omit<WaterMetrics, "waterChange">, string> = {
   temperature: "°C",
 };
 
+const FACTOR_TYPE_LABELS: Record<RiskFactor["type"], string> = {
+  single_threshold: "单次阈值超标",
+  continuous_rise: "连续升高趋势",
+  rapid_fluctuation: "快速波动",
+  no_water_change_long: "长期未换水",
+  retest_still_abnormal: "复测仍异常",
+  capacity_sensitivity: "水体敏感度",
+  multiple_abnormal_metrics: "多项指标异常",
+};
+
+function getRiskScoreProgressColor(score: number): string {
+  if (score >= 50) return "#dc2626";
+  if (score >= 25) return "#ea580c";
+  if (score >= 10) return "#f59e0b";
+  return "#16a34a";
+}
+
 export function TankDetailPanel({ info, records, onClose }: TankDetailPanelProps) {
-  const { tank, customer, latestRecord, nextPlan, riskLevel, pendingAlerts } = info;
+  const { tank, customer, latestRecord, nextPlan, riskLevel, pendingAlerts, riskAssessment } = info;
+  const risk = riskAssessment;
 
   return (
     <div className="detail-overlay" onClick={onClose}>
@@ -41,8 +61,15 @@ export function TankDetailPanel({ info, records, onClose }: TankDetailPanelProps
                 {tank.tankType}
               </span>
               <h2>{tank.name}</h2>
-              <span className={`record-status record-status-${riskLevel}`}>
-                {riskLevel}
+              <span
+                className="record-status"
+                style={{
+                  backgroundColor: getRiskLevelColor(risk.riskLevel as RiskLevel),
+                  color: "#fff",
+                  border: "none",
+                }}
+              >
+                {risk.riskLevel}
               </span>
               {pendingAlerts > 0 && (
                 <span className="dashboard-alert-badge">
@@ -62,6 +89,94 @@ export function TankDetailPanel({ info, records, onClose }: TankDetailPanelProps
         </header>
 
         <div className="detail-body">
+          <section className="detail-section detail-risk-overview">
+            <h3>综合风险评估</h3>
+            <div className="risk-overview-card">
+              <div className="risk-score-display">
+                <div className="risk-score-circle">
+                  <svg width="120" height="120" viewBox="0 0 120 120">
+                    <circle
+                      cx="60"
+                      cy="60"
+                      r="50"
+                      fill="none"
+                      stroke="#e5e7eb"
+                      strokeWidth="10"
+                    />
+                    <circle
+                      cx="60"
+                      cy="60"
+                      r="50"
+                      fill="none"
+                      stroke={getRiskScoreProgressColor(risk.totalScore)}
+                      strokeWidth="10"
+                      strokeDasharray={`${Math.min(risk.totalScore, 100) * 3.14} 314`}
+                      strokeLinecap="round"
+                      transform="rotate(-90 60 60)"
+                    />
+                  </svg>
+                  <div className="risk-score-text">
+                    <strong>{risk.totalScore}</strong>
+                    <span>风险分</span>
+                  </div>
+                </div>
+                <div className="risk-level-info">
+                  <div
+                    className="risk-level-badge"
+                    style={{
+                      backgroundColor: getRiskLevelColor(risk.riskLevel as RiskLevel),
+                    }}
+                  >
+                    {risk.riskLevel}
+                  </div>
+                  <p className="risk-summary">{risk.summary}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {risk.factors.length > 0 && (
+            <section className="detail-section">
+              <h3>风险触发因素（{risk.factors.length}项）</h3>
+              <div className="risk-factors-list">
+                {risk.factors.map((factor, idx) => (
+                  <div
+                    key={idx}
+                    className={`risk-factor-item risk-factor-${factor.severity}`}
+                  >
+                    <div className="risk-factor-header">
+                      <span className="risk-factor-type-tag">
+                        {FACTOR_TYPE_LABELS[factor.type]}
+                      </span>
+                      <span className={`risk-factor-severity risk-factor-severity-${factor.severity}`}>
+                        {factor.severity === "severe" ? "严重" : "轻微"}
+                      </span>
+                      <span className="risk-factor-score">+{factor.score}分</span>
+                    </div>
+                    <p className="risk-factor-description">{factor.description}</p>
+                    {factor.evidence && (
+                      <p className="risk-factor-evidence">📊 依据：{factor.evidence}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {risk.recommendations.length > 0 && (
+            <section className="detail-section">
+              <h3>维护建议</h3>
+              <ul className="risk-recommendations-list">
+                {risk.recommendations.map((rec, idx) => (
+                  <li key={idx}>
+                    <span className="rec-icon">💡</span>
+                    {rec}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section className="detail-section">
             <h3>鱼缸信息</h3>
             <div className="detail-info-grid">

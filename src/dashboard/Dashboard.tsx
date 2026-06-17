@@ -9,6 +9,7 @@ import type {
 } from "../db/types";
 import type { TankDashboardInfo, CustomerDashboardInfo, RiskFilter, ViewMode } from "./types";
 import { TankDetailPanel } from "./TankDetailPanel";
+import { assessTankRisk, getRiskLevelColor, type RiskLevel } from "../riskEngine";
 import "../styles.css";
 
 interface DashboardProps {
@@ -24,6 +25,13 @@ const aggregateRisk = (risks: RecordStatus[]): RecordStatus => {
   if (risks.includes("异常")) return "异常";
   if (risks.includes("关注")) return "关注";
   return "稳定";
+};
+
+const aggregateRiskLevel = (levels: RiskLevel[]): RiskLevel => {
+  if (levels.includes("严重风险")) return "严重风险";
+  if (levels.includes("高风险")) return "高风险";
+  if (levels.includes("中风险")) return "中风险";
+  return "低风险";
 };
 
 const getStatusClass = (status: RecordStatus) => {
@@ -114,10 +122,11 @@ export function Dashboard({
       const tankRecords = waterRecords.filter(
         (r) => r.tankId === tank.id || r.tankName === tank.name
       );
-      const latestRecord = tankRecords.sort(
+      const sortedRecords = [...tankRecords].sort(
         (a, b) =>
-          new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()
-      )[0];
+          new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
+      );
+      const latestRecord = sortedRecords[sortedRecords.length - 1];
 
       const tankPlans = waterChangePlans.filter(
         (p) => p.tankId === tank.id || p.tankName === tank.name
@@ -128,30 +137,24 @@ export function Dashboard({
       )[0];
 
       const tankAlerts = alerts.filter(
-        (a) => a.tankId === tank.id && a.status === "pending"
+        (a) => (a.tankId === tank.id || a.tankName === tank.name) && a.status === "pending"
       );
 
-      let riskLevel: RecordStatus = "稳定";
-      if (latestRecord) {
-        riskLevel = latestRecord.status;
-      }
-      if (tankAlerts.some((a) => a.severity === "severe")) {
-        riskLevel = "异常";
-      } else if (tankAlerts.length > 0 && riskLevel === "稳定") {
-        riskLevel = "关注";
-      }
-      const planStatus = getPlanStatus(nextPlan);
-      if (planStatus === "overdue" && riskLevel !== "异常") {
-        riskLevel = "关注";
-      }
+      const riskAssessment = assessTankRisk({
+        tank,
+        records: sortedRecords,
+        plans: tankPlans,
+        alerts: tankAlerts,
+      });
 
       map.set(tank.id, {
         tank,
         customer: customerMap.get(tank.customerId || ""),
         latestRecord,
         nextPlan,
-        riskLevel,
+        riskLevel: riskAssessment.recordStatus,
         pendingAlerts: tankAlerts.length,
+        riskAssessment,
       });
     });
 
@@ -200,6 +203,9 @@ export function Dashboard({
           customer,
           tanks: customerTanks,
           overallRisk: aggregateRisk(customerTanks.map((t) => t.riskLevel)),
+          overallRiskLevel: aggregateRiskLevel(
+            customerTanks.map((t) => t.riskAssessment.riskLevel)
+          ),
         });
       }
     });
@@ -226,9 +232,10 @@ export function Dashboard({
       .filter(Boolean) as TankDashboardInfo[];
     return {
       total: filteredInfos.length,
-      ok: filteredInfos.filter((t) => t.riskLevel === "稳定").length,
-      watch: filteredInfos.filter((t) => t.riskLevel === "关注").length,
-      danger: filteredInfos.filter((t) => t.riskLevel === "异常").length,
+      ok: filteredInfos.filter((t) => t.riskAssessment.riskLevel === "低风险").length,
+      medium: filteredInfos.filter((t) => t.riskAssessment.riskLevel === "中风险").length,
+      watch: filteredInfos.filter((t) => t.riskAssessment.riskLevel === "高风险").length,
+      danger: filteredInfos.filter((t) => t.riskAssessment.riskLevel === "严重风险").length,
     };
   }, [filteredTankIds, tankInfoMap]);
 
@@ -247,60 +254,94 @@ export function Dashboard({
         )
     : [];
 
-  const renderTankCard = (info: TankDashboardInfo) => (
-    <article
-      key={info.tank.id}
-      className={`dashboard-tank-card dashboard-tank-${info.riskLevel}`}
-      onClick={() => setSelectedTankId(info.tank.id)}
-    >
-      <header className="dashboard-tank-header">
-        <div>
-          <span className={`tank-type-tag tank-type-${info.tank.tankType}`}>
-            {info.tank.tankType}
-          </span>
-          <h3>{info.tank.name}</h3>
-          {info.customer && (
-            <p className="dashboard-customer-name">
-              👤 {info.customer.name}
-            </p>
-          )}
-        </div>
-        <div className="dashboard-risk-indicator">
-          <span className={`record-status record-status-${info.riskLevel}`}>
-            {info.riskLevel}
-          </span>
-          {info.pendingAlerts > 0 && (
-            <span className="dashboard-alert-badge">
-              {info.pendingAlerts}
+  const renderTankCard = (info: TankDashboardInfo) => {
+    const risk = info.riskAssessment;
+    const mainFactors = risk.factors.slice(0, 2);
+    return (
+      <article
+        key={info.tank.id}
+        className={`dashboard-tank-card dashboard-tank-${info.riskLevel}`}
+        onClick={() => setSelectedTankId(info.tank.id)}
+      >
+        <header className="dashboard-tank-header">
+          <div>
+            <span className={`tank-type-tag tank-type-${info.tank.tankType}`}>
+              {info.tank.tankType}
             </span>
-          )}
-        </div>
-      </header>
-      <dl className="dashboard-info-list">
-        <div>
-          <dt>最近检测</dt>
-          <dd>{formatDateShort(info.latestRecord?.recordedAt)}</dd>
-        </div>
-        <div>
-          <dt>下次换水</dt>
-          <dd className={`dashboard-date-${getPlanStatus(info.nextPlan)}`}>
-            {info.nextPlan?.nextDate || "—"}
-            <span className="dashboard-days">
-              {getPlanDaysText(info.nextPlan)}
+            <h3>{info.tank.name}</h3>
+            {info.customer && (
+              <p className="dashboard-customer-name">
+                👤 {info.customer.name}
+              </p>
+            )}
+          </div>
+          <div className="dashboard-risk-indicator">
+            <span
+              className="record-status"
+              style={{
+                backgroundColor: getRiskLevelColor(risk.riskLevel),
+                color: "#fff",
+                border: "none",
+              }}
+            >
+              {risk.riskLevel}
             </span>
-          </dd>
-        </div>
-        <div>
-          <dt>负责人</dt>
-          <dd>{info.tank.maintainer || info.customer?.maintainer || "—"}</dd>
-        </div>
-        <div>
-          <dt>鱼缸容量</dt>
-          <dd>{info.tank.capacity || "—"}</dd>
-        </div>
-      </dl>
-    </article>
-  );
+            {info.pendingAlerts > 0 && (
+              <span className="dashboard-alert-badge">
+                {info.pendingAlerts}
+              </span>
+            )}
+          </div>
+        </header>
+        {risk.factors.length > 0 && (
+          <div className="dashboard-risk-reasons">
+            {mainFactors.map((f, idx) => (
+              <span
+                key={idx}
+                className={`risk-reason-tag risk-reason-${f.severity}`}
+                title={f.evidence || f.description}
+              >
+                {f.metricLabel || "综合"}{f.severity === "severe" ? "⚠" : "·"}{f.description.length > 12 ? f.description.slice(0, 12) + "..." : f.description}
+              </span>
+            ))}
+            {risk.factors.length > 2 && (
+              <span className="risk-reason-more">+{risk.factors.length - 2}</span>
+            )}
+          </div>
+        )}
+        <dl className="dashboard-info-list">
+          <div>
+            <dt>最近检测</dt>
+            <dd>{formatDateShort(info.latestRecord?.recordedAt)}</dd>
+          </div>
+          <div>
+            <dt>下次换水</dt>
+            <dd className={`dashboard-date-${getPlanStatus(info.nextPlan)}`}>
+              {info.nextPlan?.nextDate || "—"}
+              <span className="dashboard-days">
+                {getPlanDaysText(info.nextPlan)}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>负责人</dt>
+            <dd>{info.tank.maintainer || info.customer?.maintainer || "—"}</dd>
+          </div>
+          <div>
+            <dt>风险评分</dt>
+            <dd
+              style={{
+                fontWeight: 600,
+                color: getRiskLevelColor(risk.riskLevel),
+              }}
+            >
+              {risk.totalScore}
+            </dd>
+          </div>
+        </dl>
+      </article>
+    );
+  };
 
   return (
     <section className="dashboard panel">
@@ -331,15 +372,19 @@ export function Dashboard({
           <strong className="dashboard-stat-value">{stats.total}</strong>
         </div>
         <div className="dashboard-stat-item dashboard-stat-ok">
-          <span className="dashboard-stat-label">状态稳定</span>
+          <span className="dashboard-stat-label">低风险</span>
           <strong className="dashboard-stat-value">{stats.ok}</strong>
         </div>
+        <div className="dashboard-stat-item" style={{ background: "#fef3c7", color: "#92400e" }}>
+          <span className="dashboard-stat-label">中风险</span>
+          <strong className="dashboard-stat-value">{stats.medium}</strong>
+        </div>
         <div className="dashboard-stat-item dashboard-stat-watch">
-          <span className="dashboard-stat-label">需要关注</span>
+          <span className="dashboard-stat-label">高风险</span>
           <strong className="dashboard-stat-value">{stats.watch}</strong>
         </div>
         <div className="dashboard-stat-item dashboard-stat-danger">
-          <span className="dashboard-stat-label">异常告警</span>
+          <span className="dashboard-stat-label">严重风险</span>
           <strong className="dashboard-stat-value">{stats.danger}</strong>
         </div>
       </div>
@@ -444,11 +489,21 @@ export function Dashboard({
                 <div>
                   <h3>
                     <span
-                      className={`dashboard-risk-dot ${getStatusClass(
-                        group.overallRisk
-                      )}`}
+                      className="dashboard-risk-dot"
+                      style={{
+                        backgroundColor: getRiskLevelColor(group.overallRiskLevel),
+                      }}
                     />
                     {group.customer.name}
+                    <span
+                      className="customer-risk-tag"
+                      style={{
+                        backgroundColor: getRiskLevelColor(group.overallRiskLevel),
+                        color: "#fff",
+                      }}
+                    >
+                      {group.overallRiskLevel}
+                    </span>
                   </h3>
                   <p className="dashboard-customer-meta">
                     {group.customer.address} · {group.customer.phone} · 维护师：
@@ -475,7 +530,20 @@ export function Dashboard({
               <header className="dashboard-customer-header">
                 <div>
                   <h3>
-                    <span className="dashboard-risk-dot status-ok" />
+                    <span
+                      className="dashboard-risk-dot"
+                      style={{
+                        backgroundColor: aggregateRiskLevel(
+                          customerGroups.unassignedTanks.map((t) => t.riskAssessment.riskLevel)
+                        ) === "低风险"
+                          ? "#16a34a"
+                          : getRiskLevelColor(
+                              aggregateRiskLevel(
+                                customerGroups.unassignedTanks.map((t) => t.riskAssessment.riskLevel)
+                              )
+                            ),
+                      }}
+                    />
                     未分配客户
                   </h3>
                   <p className="dashboard-customer-meta">尚未分配到客户的鱼缸</p>

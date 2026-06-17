@@ -241,6 +241,80 @@ export function generateSeedData() {
       ),
     },
     {
+      id: "record-seed-001b",
+      tankName: "客厅草缸",
+      tankId: "tank-seed-001",
+      recordedAt: formatDateTime(daysAgo(2)),
+      metrics: createWaterMetrics({
+        ph: "7.0",
+        ammonia: "0",
+        nitrite: "0.05",
+        nitrate: "12",
+        hardness: "7",
+        temperature: "24.0",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "7.0",
+          ammonia: "0",
+          nitrite: "0.05",
+          nitrate: "12",
+          hardness: "7",
+          temperature: "24.0",
+        })
+      ),
+    },
+    {
+      id: "record-seed-001c",
+      tankName: "客厅草缸",
+      tankId: "tank-seed-001",
+      recordedAt: formatDateTime(daysAgo(4)),
+      metrics: createWaterMetrics({
+        ph: "6.5",
+        ammonia: "0",
+        nitrite: "0",
+        nitrate: "22",
+        hardness: "9",
+        temperature: "27.0",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "6.5",
+          ammonia: "0",
+          nitrite: "0",
+          nitrate: "22",
+          hardness: "9",
+          temperature: "27.0",
+        })
+      ),
+    },
+    {
+      id: "record-seed-001d",
+      tankName: "客厅草缸",
+      tankId: "tank-seed-001",
+      recordedAt: formatDateTime(daysAgo(5)),
+      metrics: createWaterMetrics({
+        ph: "6.9",
+        ammonia: "0",
+        nitrite: "0",
+        nitrate: "16",
+        hardness: "8",
+        temperature: "25.0",
+        waterChange: "30%",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "6.9",
+          ammonia: "0",
+          nitrite: "0",
+          nitrate: "16",
+          hardness: "8",
+          temperature: "25.0",
+          waterChange: "30%",
+        })
+      ),
+    },
+    {
       id: "record-seed-002",
       tankName: "旗舰展示海缸",
       tankId: "tank-seed-002",
@@ -267,7 +341,81 @@ export function generateSeedData() {
       ),
     },
     {
+      id: "record-seed-002b",
+      tankName: "旗舰展示海缸",
+      tankId: "tank-seed-002",
+      recordedAt: formatDateTime(daysAgo(5)),
+      metrics: createWaterMetrics({
+        ph: "8.2",
+        ammonia: "0",
+        nitrite: "0",
+        nitrate: "6",
+        hardness: "11",
+        temperature: "26.5",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "8.2",
+          ammonia: "0",
+          nitrite: "0",
+          nitrate: "6",
+          hardness: "11",
+          temperature: "26.5",
+        })
+      ),
+    },
+    {
+      id: "record-seed-002c",
+      tankName: "旗舰展示海缸",
+      tankId: "tank-seed-002",
+      recordedAt: formatDateTime(daysAgo(10)),
+      metrics: createWaterMetrics({
+        ph: "8.3",
+        ammonia: "0",
+        nitrite: "0",
+        nitrate: "5",
+        hardness: "10",
+        temperature: "25.5",
+        waterChange: "20%",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "8.3",
+          ammonia: "0",
+          nitrite: "0",
+          nitrate: "5",
+          hardness: "10",
+          temperature: "25.5",
+          waterChange: "20%",
+        })
+      ),
+    },
+    {
       id: "record-seed-003",
+      tankName: "办公室繁殖缸",
+      tankId: "tank-seed-003",
+      recordedAt: formatDateTime(daysAgo(0)),
+      metrics: createWaterMetrics({
+        ph: "7.0",
+        ammonia: "0.08",
+        nitrite: "0.45",
+        nitrate: "35",
+        hardness: "6",
+        temperature: "28.0",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "7.0",
+          ammonia: "0.08",
+          nitrite: "0.45",
+          nitrate: "35",
+          hardness: "6",
+          temperature: "28.0",
+        })
+      ),
+    },
+    {
+      id: "record-seed-003b",
       tankName: "办公室繁殖缸",
       tankId: "tank-seed-003",
       recordedAt: formatDateTime(daysAgo(2)),
@@ -287,6 +435,56 @@ export function generateSeedData() {
           nitrate: "25",
           hardness: "6",
           temperature: "27.5",
+        })
+      ),
+    },
+    {
+      id: "record-seed-003c",
+      tankName: "办公室繁殖缸",
+      tankId: "tank-seed-003",
+      recordedAt: formatDateTime(daysAgo(4)),
+      metrics: createWaterMetrics({
+        ph: "7.3",
+        ammonia: "0.03",
+        nitrite: "0.15",
+        nitrate: "18",
+        hardness: "7",
+        temperature: "27.0",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "7.3",
+          ammonia: "0.03",
+          nitrite: "0.15",
+          nitrate: "18",
+          hardness: "7",
+          temperature: "27.0",
+        })
+      ),
+    },
+    {
+      id: "record-seed-003d",
+      tankName: "办公室繁殖缸",
+      tankId: "tank-seed-003",
+      recordedAt: formatDateTime(daysAgo(6)),
+      metrics: createWaterMetrics({
+        ph: "7.4",
+        ammonia: "0.02",
+        nitrite: "0.08",
+        nitrate: "12",
+        hardness: "7",
+        temperature: "26.5",
+        waterChange: "25%",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "7.4",
+          ammonia: "0.02",
+          nitrite: "0.08",
+          nitrate: "12",
+          hardness: "7",
+          temperature: "26.5",
+          waterChange: "25%",
         })
       ),
     },
@@ -311,6 +509,30 @@ export function generateSeedData() {
           nitrate: "18",
           hardness: "14",
           temperature: "26.5",
+        })
+      ),
+    },
+    {
+      id: "record-seed-004b",
+      tankName: "萨伊蓝主缸",
+      tankId: "tank-seed-004",
+      recordedAt: formatDateTime(daysAgo(7)),
+      metrics: createWaterMetrics({
+        ph: "8.1",
+        ammonia: "0",
+        nitrite: "0",
+        nitrate: "15",
+        hardness: "13",
+        temperature: "26.0",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "8.1",
+          ammonia: "0",
+          nitrite: "0",
+          nitrate: "15",
+          hardness: "13",
+          temperature: "26.0",
         })
       ),
     },
@@ -341,10 +563,34 @@ export function generateSeedData() {
       ),
     },
     {
+      id: "record-seed-005b",
+      tankName: "卧室草缸",
+      tankId: "tank-seed-005",
+      recordedAt: formatDateTime(daysAgo(10)),
+      metrics: createWaterMetrics({
+        ph: "6.7",
+        ammonia: "0",
+        nitrite: "0",
+        nitrate: "10",
+        hardness: "7",
+        temperature: "25.5",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "6.7",
+          ammonia: "0",
+          nitrite: "0",
+          nitrate: "10",
+          hardness: "7",
+          temperature: "25.5",
+        })
+      ),
+    },
+    {
       id: "record-seed-006",
       tankName: "VIP室海缸",
       tankId: "tank-seed-006",
-      recordedAt: formatDateTime(daysAgo(5)),
+      recordedAt: formatDateTime(daysAgo(18)),
       metrics: createWaterMetrics({
         ph: "8.2",
         ammonia: "0",
@@ -352,6 +598,7 @@ export function generateSeedData() {
         nitrate: "5",
         hardness: "11",
         temperature: "26.5",
+        waterChange: "15%",
       }),
       ...evaluateRecordStatus(
         createWaterMetrics({
@@ -361,6 +608,31 @@ export function generateSeedData() {
           nitrate: "5",
           hardness: "11",
           temperature: "26.5",
+          waterChange: "15%",
+        })
+      ),
+    },
+    {
+      id: "record-seed-006b",
+      tankName: "VIP室海缸",
+      tankId: "tank-seed-006",
+      recordedAt: formatDateTime(daysAgo(5)),
+      metrics: createWaterMetrics({
+        ph: "7.9",
+        ammonia: "0.08",
+        nitrite: "0.15",
+        nitrate: "12",
+        hardness: "9",
+        temperature: "27.5",
+      }),
+      ...evaluateRecordStatus(
+        createWaterMetrics({
+          ph: "7.9",
+          ammonia: "0.08",
+          nitrite: "0.15",
+          nitrate: "12",
+          hardness: "9",
+          temperature: "27.5",
         })
       ),
     },
