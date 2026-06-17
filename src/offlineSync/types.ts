@@ -9,6 +9,7 @@ export type EntityType =
   | "waterRecord"
   | "waterChangePlan"
   | "alert"
+  | "maintenanceTask"
   | "tank";
 
 export type SyncOperation = "create" | "update" | "delete";

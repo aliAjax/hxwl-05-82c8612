@@ -45,7 +45,11 @@ class OfflineSyncStore {
     if (typeof window !== "undefined") {
       this.isOnline = navigator.onLine;
       window.addEventListener("online", () => {
+        const wasOffline = !this.isOnline;
         this.isOnline = true;
+        if (wasOffline) {
+          this.promoteDraftsToQueue();
+        }
         this.notifyListeners();
       });
       window.addEventListener("offline", () => {
@@ -69,8 +73,12 @@ class OfflineSyncStore {
   }
 
   setNetworkStatus(online: boolean) {
+    const wasOffline = !this.isOnline;
     this.isOnline = online;
     this.saveToStorage(STORAGE_KEYS.NETWORK_STATUS, JSON.stringify(online));
+    if (online && wasOffline) {
+      this.promoteDraftsToQueue();
+    }
     this.notifyListeners();
   }
 
@@ -469,6 +477,57 @@ class OfflineSyncStore {
     }
 
     return stats;
+  }
+
+  promoteDraftsToQueue(): number {
+    let promoted = 0;
+    const queue = this.getSyncQueue();
+    const queuedEntityIds = new Set(queue.map((q) => q.entityId));
+
+    const promoteList = <T extends { id: string; syncMeta: SyncMeta }>(
+      entities: T[],
+      entityType: EntityType
+    ): T[] => {
+      const updated: T[] = [];
+      for (const entity of entities) {
+        if (
+          entity.syncMeta.syncStatus === "draft" &&
+          entity.syncMeta.pendingOperation &&
+          !queuedEntityIds.has(entity.id)
+        ) {
+          entity.syncMeta = {
+            ...entity.syncMeta,
+            syncStatus: "pending",
+          };
+          this.addToQueue(
+            entityType,
+            entity.id,
+            entity.syncMeta.pendingOperation,
+            entity
+          );
+          promoted++;
+        }
+        updated.push(entity);
+      }
+      return updated;
+    };
+
+    const records = promoteList(this.getWaterRecords(), "waterRecord");
+    this.saveToStorage(STORAGE_KEYS.WATER_RECORDS, JSON.stringify(records));
+
+    const plans = promoteList(this.getWaterPlans(), "waterChangePlan");
+    this.saveToStorage(STORAGE_KEYS.WATER_PLANS, JSON.stringify(plans));
+
+    const alerts = promoteList(this.getAlerts(), "alert");
+    this.saveToStorage(STORAGE_KEYS.ALERTS, JSON.stringify(alerts));
+
+    const tasks = promoteList(this.getTasks(), "maintenanceTask");
+    this.saveToStorage(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
+
+    if (promoted > 0) {
+      this.notifyListeners();
+    }
+    return promoted;
   }
 
   clearAllOfflineData() {

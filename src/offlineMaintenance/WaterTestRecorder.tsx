@@ -190,6 +190,17 @@ export function WaterTestRecorder({ onRecordCreated }: WaterTestRecorderProps) {
     refreshRecords();
   };
 
+  const handlePromoteDraft = (recordId: string) => {
+    const record = offlineSyncStore.getWaterRecords().find((r) => r.id === recordId);
+    if (!record) return;
+    offlineSyncStore.updateRecordSyncStatus(recordId, "pending");
+    const updated = offlineSyncStore.getWaterRecords().find((r) => r.id === recordId);
+    if (updated) {
+      offlineSyncStore.addToQueue("waterRecord", recordId, "create", updated);
+    }
+    refreshRecords();
+  };
+
   const handleDelete = (recordId: string) => {
     if (!window.confirm("确定删除该检测记录？")) return;
     offlineSyncStore.deleteWaterRecord(recordId);
@@ -421,7 +432,15 @@ export function WaterTestRecorder({ onRecordCreated }: WaterTestRecorderProps) {
                       🔄 重试同步
                     </button>
                   )}
-                  {(record.syncMeta.syncStatus === "draft" || record.syncMeta.syncStatus === "conflict") && (
+                  {record.syncMeta.syncStatus === "draft" && (
+                    <button
+                      className="secondary-action"
+                      onClick={() => handlePromoteDraft(record.id)}
+                    >
+                      ⬆ 加入同步队列
+                    </button>
+                  )}
+                  {record.syncMeta.syncStatus === "conflict" && (
                     <button
                       className="secondary-action"
                       onClick={() => handleMarkSynced(record.id)}

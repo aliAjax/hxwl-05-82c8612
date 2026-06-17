@@ -22,6 +22,10 @@ export function AlertReminderPanel() {
     const pad = (n: number) => String(n).padStart(2, "0");
     const processedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
+    const updatedSyncMeta = alert.syncMeta.syncStatus === "synced"
+      ? { ...alert.syncMeta, syncStatus: "pending" as const, pendingOperation: "update" as const }
+      : { ...alert.syncMeta, syncStatus: "pending" as const };
+
     offlineSyncStore.saveAlert({
       ...alert,
       status: "processed",
@@ -29,6 +33,16 @@ export function AlertReminderPanel() {
       treatmentNote: "已跟进处理（离线记录）",
       handler: "店员",
       processedAt,
+      syncMeta: updatedSyncMeta,
+    });
+    offlineSyncStore.addToQueue("alert", alertId, "update", {
+      ...alert,
+      status: "processed",
+      treatment: "other",
+      treatmentNote: "已跟进处理（离线记录）",
+      handler: "店员",
+      processedAt,
+      syncMeta: updatedSyncMeta,
     });
     refresh();
   };

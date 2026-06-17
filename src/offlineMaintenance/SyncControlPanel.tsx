@@ -12,6 +12,7 @@ const ENTITY_TYPE_LABEL: Record<EntityType, string> = {
   waterRecord: "水质记录",
   waterChangePlan: "换水计划",
   alert: "异常提醒",
+  maintenanceTask: "维护任务",
   tank: "鱼缸档案",
 };
 
@@ -53,9 +54,16 @@ export function SyncControlPanel() {
         return;
       }
     }
+
+    const promoted = offlineSyncStore.promoteDraftsToQueue();
+    if (promoted > 0) {
+      refresh();
+    }
+
     setIsSyncing(true);
     setLastSyncResult(null);
-    setSyncProgress({ processed: 0, total: queue.length });
+    const currentQueue = offlineSyncStore.getSyncQueue();
+    setSyncProgress({ processed: 0, total: currentQueue.length });
 
     const result = await syncEngine.syncAll((processed, total) => {
       setSyncProgress({ processed, total });
@@ -63,8 +71,9 @@ export function SyncControlPanel() {
 
     setIsSyncing(false);
     setSyncProgress(null);
+    const promoteMsg = promoted > 0 ? `（含 ${promoted} 条草稿提升入队）` : "";
     setLastSyncResult(
-      `同步完成：成功 ${result.succeeded} 项，失败 ${result.failed} 项，冲突 ${result.conflicts} 项`
+      `同步完成：成功 ${result.succeeded} 项，失败 ${result.failed} 项，冲突 ${result.conflicts} 项${promoteMsg}`
     );
     refresh();
   };

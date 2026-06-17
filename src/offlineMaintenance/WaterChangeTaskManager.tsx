@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   offlineSyncStore,
+  syncEngine,
   createSyncMeta,
   type MaintenanceTask,
   type OfflineWaterChangePlan,
@@ -56,7 +57,7 @@ export function WaterChangeTaskManager({ onTaskCreated }: WaterChangeTaskManager
     });
 
     if (isOnline) {
-      offlineSyncStore.addToQueue("waterRecord", task.id, "create", task);
+      offlineSyncStore.addToQueue("maintenanceTask", task.id, "create", task);
     }
 
     setFormData({
@@ -75,10 +76,20 @@ export function WaterChangeTaskManager({ onTaskCreated }: WaterChangeTaskManager
   const handleStartTask = (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
+    const updatedSyncMeta = task.syncMeta.syncStatus === "synced"
+      ? { ...task.syncMeta, syncStatus: "pending" as const, pendingOperation: "update" as const }
+      : task.syncMeta;
     offlineSyncStore.saveTask({
       ...task,
       status: "inProgress",
+      syncMeta: updatedSyncMeta,
     });
+    if (updatedSyncMeta.syncStatus === "pending") {
+      const updatedTask = offlineSyncStore.getTasks().find((t) => t.id === taskId);
+      if (updatedTask) {
+        offlineSyncStore.addToQueue("maintenanceTask", taskId, "update", updatedTask);
+      }
+    }
     refreshData();
   };
 
@@ -89,11 +100,22 @@ export function WaterChangeTaskManager({ onTaskCreated }: WaterChangeTaskManager
     const pad = (n: number) => String(n).padStart(2, "0");
     const completedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
+    const updatedSyncMeta = task.syncMeta.syncStatus === "synced"
+      ? { ...task.syncMeta, syncStatus: "pending" as const, pendingOperation: "update" as const }
+      : task.syncMeta;
+
     offlineSyncStore.saveTask({
       ...task,
       status: "completed",
       completedAt,
+      syncMeta: updatedSyncMeta,
     });
+    if (updatedSyncMeta.syncStatus === "pending") {
+      const updatedTask = offlineSyncStore.getTasks().find((t) => t.id === taskId);
+      if (updatedTask) {
+        offlineSyncStore.addToQueue("maintenanceTask", taskId, "update", updatedTask);
+      }
+    }
     refreshData();
   };
 
