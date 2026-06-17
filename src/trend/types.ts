@@ -59,7 +59,16 @@ export function evaluateDataPoint(
   value: number
 ): "normal" | "warning" | "danger" {
   const range = METRIC_RANGES[metric];
+  const isZeroRange = range.ok[0] === 0 && range.ok[1] === 0;
+
   if (value < range.warning[0] || value > range.warning[1]) return "danger";
+
+  if (isZeroRange) {
+    if (value <= 0) return "normal";
+    if (value <= range.warning[1] * 0.5) return "warning";
+    return "danger";
+  }
+
   if (value < range.ok[0] || value > range.ok[1]) return "warning";
   return "normal";
 }

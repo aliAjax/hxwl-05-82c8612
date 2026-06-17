@@ -16,7 +16,7 @@ export function WaterTrendAnalysis({
 }: WaterTrendAnalysisProps) {
   const [activeMetric, setActiveMetric] = useState<TrendMetric>("ph");
   const [activeTankType, setActiveTankType] = useState<string>("全部");
-  const [trendData, setTrendData] = useState<TankTrendData[]>([]);
+  const [allTrendData, setAllTrendData] = useState<TankTrendData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,20 +25,15 @@ export function WaterTrendAnalysis({
 
     const fetchData = async () => {
       try {
-        let data: TankTrendData[];
-        if (activeTankType === "全部") {
-          data = await dataSource.getAllTanks();
-        } else {
-          data = await dataSource.getTanksByType(activeTankType);
-        }
+        const data = await dataSource.getAllTanks();
         if (mounted) {
-          setTrendData(data);
+          setAllTrendData(data);
           setLoading(false);
         }
       } catch (err) {
         console.error("Failed to fetch trend data:", err);
         if (mounted) {
-          setTrendData([]);
+          setAllTrendData([]);
           setLoading(false);
         }
       }
@@ -48,7 +43,12 @@ export function WaterTrendAnalysis({
     return () => {
       mounted = false;
     };
-  }, [dataSource, activeTankType]);
+  }, [dataSource]);
+
+  const trendData = useMemo(() => {
+    if (activeTankType === "全部") return allTrendData;
+    return allTrendData.filter((t) => t.tankType === activeTankType);
+  }, [allTrendData, activeTankType]);
 
   const stats = useMemo(() => {
     const result: Record<
@@ -119,11 +119,11 @@ export function WaterTrendAnalysis({
                 {type}
                 {type !== "全部" && (
                   <span className="chip-count">
-                    {trendData.filter((t) => t.tankType === type).length}
+                    {allTrendData.filter((t) => t.tankType === type).length}
                   </span>
                 )}
                 {type === "全部" && (
-                  <span className="chip-count">{trendData.length}</span>
+                  <span className="chip-count">{allTrendData.length}</span>
                 )}
               </button>
             ))}

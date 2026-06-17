@@ -73,19 +73,35 @@ function generateDataPoints(
   const points: TrendDataPoint[] = [];
   const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
+  const range = METRIC_RANGES[metric];
+  const isZeroRange = range.ok[0] === 0 && range.ok[1] === 0;
 
   for (let i = days - 1; i >= 0; i--) {
     const timestamp = now - i * dayMs + Math.floor(random() * dayMs * 0.5);
-    const noise = (random() - 0.5) * 2 * volatility;
-    let value = baseValue + noise;
 
-    if (random() > 0.92) {
-      const spike = (random() - 0.3) * volatility * 3;
-      value += spike;
+    let value: number;
+
+    if (isZeroRange) {
+      if (random() > 0.75) {
+        const noise = random() * volatility * 2;
+        value = baseValue + noise;
+      } else {
+        value = 0;
+      }
+    } else {
+      const noise = (random() - 0.5) * 2 * volatility;
+      value = baseValue + noise;
     }
 
-    const range = METRIC_RANGES[metric];
-    value = Math.max(range.warning[0] - volatility, Math.min(range.warning[1] + volatility, value));
+    if (random() > 0.96) {
+      const spikeDir = random() > 0.5 ? 1 : -1;
+      const spike = random() * volatility * 3;
+      value += spikeDir * spike;
+    }
+
+    const minBound = Math.max(0, range.warning[0] - volatility * 0.5);
+    const maxBound = range.warning[1] + volatility * 0.5;
+    value = Math.max(minBound, Math.min(maxBound, value));
     value = Math.round(value * 100) / 100;
 
     points.push({
