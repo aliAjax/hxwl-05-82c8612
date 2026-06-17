@@ -1,5 +1,5 @@
 import type { TankDashboardInfo } from "./types";
-import type { WaterRecord, WaterMetrics } from "../App";
+import type { WaterRecord, WaterMetrics } from "../db/types";
 
 interface TankDetailPanelProps {
   info: TankDashboardInfo;

@@ -4,7 +4,15 @@ import { WaterTrendAnalysis, mockDataSource } from "./trend";
 import { AlertCenter, generateAlertsFromRecord } from "./alertCenter/AlertCenter";
 import { AlertItem, TreatmentAction, AlertMetricValues } from "./alertCenter/types";
 import { dataService } from "./db";
-import type { Customer } from "./db/types";
+import type {
+  Customer,
+  RecordStatus,
+  WaterMetrics,
+  WaterRecord,
+  TankProfile,
+  PlanStatus,
+  WaterChangePlan,
+} from "./db/types";
 import { Dashboard } from "./dashboard";
 
 const project = {
@@ -67,31 +75,18 @@ const project = {
   ]
 };
 
+export type {
+  RecordStatus,
+  WaterMetrics,
+  WaterRecord,
+  TankProfile,
+  PlanStatus,
+  WaterChangePlan,
+};
+
 const statusColors = ["status-ok", "status-watch", "status-danger"];
 
 const TANK_TYPES = ["草缸", "海缸", "三湖缸", "繁殖缸"];
-
-type RecordStatus = "稳定" | "关注" | "异常";
-
-interface WaterMetrics {
-  ph: string;
-  ammonia: string;
-  nitrite: string;
-  nitrate: string;
-  hardness: string;
-  temperature: string;
-  waterChange: string;
-}
-
-interface WaterRecord {
-  id: string;
-  tankName: string;
-  tankId?: string;
-  recordedAt: string;
-  metrics: WaterMetrics;
-  status: RecordStatus;
-  note: string;
-}
 
 const METRIC_RANGES: Record<
   keyof Omit<WaterMetrics, "waterChange">,
@@ -114,31 +109,6 @@ const emptyWaterMetrics: WaterMetrics = {
   temperature: "",
   waterChange: "",
 };
-
-interface TankProfile {
-  id: string;
-  name: string;
-  tankType: string;
-  capacity: string;
-  setupDate: string;
-  mainCreatures: string;
-  maintainer: string;
-  customerId?: string;
-}
-
-type PlanStatus = "normal" | "upcoming" | "overdue" | "completed";
-
-interface WaterChangePlan {
-  id: string;
-  tankName: string;
-  tankId?: string;
-  cycleDays: string;
-  waterRatio: string;
-  nextDate: string;
-  note: string;
-  completedAt?: string;
-  createdAt: string;
-}
 
 const emptyForm: Omit<TankProfile, "id"> = {
   name: "",

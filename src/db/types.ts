@@ -1,4 +1,3 @@
-import type { TankProfile, WaterRecord, WaterChangePlan } from "../App";
 import type { AlertItem } from "../alertCenter/types";
 
 export type RecordStatus = "稳定" | "关注" | "异常";
@@ -24,7 +23,40 @@ export interface Customer {
   createdAt: string;
 }
 
-export type { TankProfile, WaterRecord, WaterChangePlan, AlertItem };
+export interface TankProfile {
+  id: string;
+  name: string;
+  tankType: string;
+  capacity: string;
+  setupDate: string;
+  mainCreatures: string;
+  maintainer: string;
+  customerId?: string;
+}
+
+export interface WaterRecord {
+  id: string;
+  tankName: string;
+  tankId?: string;
+  recordedAt: string;
+  metrics: WaterMetrics;
+  status: RecordStatus;
+  note: string;
+}
+
+export interface WaterChangePlan {
+  id: string;
+  tankName: string;
+  tankId?: string;
+  cycleDays: string;
+  waterRatio: string;
+  nextDate: string;
+  note: string;
+  completedAt?: string;
+  createdAt: string;
+}
+
+export type { AlertItem };
 
 export interface AppData {
   customers: Customer[];

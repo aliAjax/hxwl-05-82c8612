@@ -6,7 +6,7 @@ import type {
   WaterChangePlan,
   RecordStatus,
   AlertItem,
-} from "../App";
+} from "../db/types";
 import type { TankDashboardInfo, CustomerDashboardInfo, RiskFilter, ViewMode } from "./types";
 import { TankDetailPanel } from "./TankDetailPanel";
 import "../styles.css";
@@ -160,7 +160,7 @@ export function Dashboard({
 
   const filteredTankIds = useMemo(() => {
     return Array.from(tankInfoMap.values())
-      .filter((info) => {
+      .filter((info: TankDashboardInfo) => {
         if (customerFilter !== "全部" && info.tank.customerId !== customerFilter) {
           return false;
         }
@@ -179,7 +179,7 @@ export function Dashboard({
         }
         return true;
       })
-      .map((info) => info.tank.id);
+      .map((info: TankDashboardInfo) => info.tank.id);
   }, [tankInfoMap, customerFilter, maintainerFilter, tankTypeFilter, riskFilter]);
 
   const customerGroups = useMemo(() => {
@@ -222,7 +222,7 @@ export function Dashboard({
 
   const stats = useMemo(() => {
     const filteredInfos = filteredTankIds
-      .map((id) => tankInfoMap.get(id))
+      .map((id: string) => tankInfoMap.get(id))
       .filter(Boolean) as TankDashboardInfo[];
     return {
       total: filteredInfos.length,
@@ -432,9 +432,9 @@ export function Dashboard({
       ) : viewMode === "flat" ? (
         <div className="dashboard-tank-grid">
           {filteredTankIds
-            .map((id) => tankInfoMap.get(id))
+            .map((id: string) => tankInfoMap.get(id))
             .filter(Boolean)
-            .map((info) => renderTankCard(info!))}
+            .map((info) => renderTankCard(info as TankDashboardInfo))}
         </div>
       ) : (
         <div className="dashboard-customer-groups">

@@ -1,6 +1,5 @@
-import type { TankProfile, WaterRecord, WaterChangePlan } from "../App";
+import type { TankProfile, WaterRecord, WaterChangePlan, WaterMetrics, Customer } from "./types";
 import type { AlertItem } from "../alertCenter/types";
-import type { WaterMetrics, Customer } from "./types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
