@@ -1,5 +1,5 @@
 import { db } from "./database";
-import { generateSeedData, hasSeedDataBeenLoaded, markSeedDataAsLoaded, clearSeedDataFlag } from "./seedData";
+import { generateSeedData, hasSeedDataBeenLoaded, markSeedDataAsLoaded } from "./seedData";
 import type { TankProfile, WaterRecord, WaterChangePlan, AppData } from "./types";
 import type { AlertItem } from "../alertCenter/types";
 
@@ -11,7 +11,11 @@ export class DataService {
     await db.init();
 
     if (!hasSeedDataBeenLoaded()) {
-      await this.loadSeedData();
+      const existingData = await this.getAllData();
+      const isEmpty = Object.values(existingData).every((arr) => arr.length === 0);
+      if (isEmpty) {
+        await this.loadSeedData();
+      }
       markSeedDataAsLoaded();
     }
 
@@ -219,9 +223,6 @@ export class DataService {
 
   async clearAllData(): Promise<AppData> {
     await db.clearAll();
-    clearSeedDataFlag();
-    await db.reset();
-    await this.loadSeedData();
     markSeedDataAsLoaded();
     this.initialized = true;
     return this.getAllData();
@@ -229,8 +230,6 @@ export class DataService {
 
   async resetToSeedData(): Promise<AppData> {
     await db.clearAll();
-    clearSeedDataFlag();
-    await db.reset();
     await this.loadSeedData();
     markSeedDataAsLoaded();
     this.initialized = true;

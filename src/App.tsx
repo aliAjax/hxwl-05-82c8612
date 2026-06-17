@@ -546,7 +546,7 @@ function App() {
   }, [waterChangePlans, planFilter]);
 
   const handleClearAllData = async () => {
-    if (!window.confirm("确定要清空并重置所有数据吗？将恢复为初始演示数据。")) {
+    if (!window.confirm("确定要清空所有演示数据吗？此操作不可恢复。")) {
       setClearConfirmOpen(false);
       return;
     }
@@ -560,6 +560,7 @@ function App() {
       setClearConfirmOpen(false);
     } catch (error) {
       console.error("Failed to clear data:", error);
+      alert("清空数据失败，请重试。");
     } finally {
       setIsLoading(false);
     }
@@ -580,6 +581,7 @@ function App() {
       setClearConfirmOpen(false);
     } catch (error) {
       console.error("Failed to reload seed data:", error);
+      alert("重置数据失败，请重试。");
     } finally {
       setIsLoading(false);
     }
@@ -1031,10 +1033,10 @@ function App() {
                   </button>
                 </div>
                 <div className="data-action-card">
-                  <h3>清空并重置</h3>
-                  <p>清空所有数据后立即恢复为初始演示状态，无需手动刷新。</p>
+                  <h3>清空所有数据</h3>
+                  <p>永久删除所有本地数据，刷新页面后仍保持为空。</p>
                   <button className="danger-action" onClick={handleClearAllData}>
-                    清空并重置
+                    清空所有数据
                   </button>
                 </div>
               </div>
