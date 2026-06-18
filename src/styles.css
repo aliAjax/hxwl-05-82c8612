@@ -3846,6 +3846,58 @@ button:disabled {
   color: #64748b;
 }
 
+.mini-plan-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-plan-status {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.mini-plan-status-overdue {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.mini-plan-status-upcoming {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.mini-plan-status-normal {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.mini-plan-status-completed {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.mini-plan-days {
+  margin-left: 4px;
+  font-weight: 500;
+}
+
+.mini-plan-overdue {
+  border-color: #fecaca;
+  background: #fefafa;
+}
+
+.mini-plan-upcoming {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.mini-plan-completed {
+  opacity: 0.7;
+}
+
 .task-create-form {
   margin-bottom: 20px;
   padding: 16px;

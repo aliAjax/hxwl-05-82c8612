@@ -37,6 +37,7 @@ import {
   AlertReminderPanel,
   SyncControlPanel,
 } from "./offlineMaintenance";
+import { offlineSyncStore } from "./offlineSync";
 
 const project = {
   "id": "hxwl-05",
@@ -659,6 +660,21 @@ function App() {
       setWaterChangePlans((prev) =>
         prev.map((p) => (p.id === editingPlanId ? updatedPlan : p))
       );
+
+      const offlinePlans = offlineSyncStore.getWaterPlans();
+      const matchingOfflinePlan = offlinePlans.find(
+        (p) => !p.completedAt && p.tankName === updatedPlan.tankName
+      );
+      if (matchingOfflinePlan) {
+        offlineSyncStore.saveWaterPlan({
+          ...matchingOfflinePlan,
+          cycleDays: updatedPlan.cycleDays,
+          waterRatio: updatedPlan.waterRatio,
+          nextDate: updatedPlan.nextDate,
+          note: updatedPlan.note,
+        });
+      }
+
       closePlanModal();
       return;
     }
@@ -683,15 +699,43 @@ function App() {
 
   const handleCompletePlan = async (planId: string) => {
     if (!window.confirm("确认已完成本次换水？完成后将自动生成下一次计划。")) return;
+    const plan = waterChangePlans.find((p) => p.id === planId);
     const nextPlan = await dataService.completeWaterChangePlan(planId);
     const updatedPlans = await dataService.getWaterChangePlans();
     setWaterChangePlans(updatedPlans);
+
+    if (plan) {
+      const offlinePlans = offlineSyncStore.getWaterPlans();
+      const matchingOfflinePlan = offlinePlans.find(
+        (p) => !p.completedAt && p.tankName === plan.tankName
+      );
+      if (matchingOfflinePlan) {
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const completedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        offlineSyncStore.saveWaterPlan({
+          ...matchingOfflinePlan,
+          completedAt,
+        });
+      }
+    }
   };
 
   const handleDeletePlan = async (planId: string) => {
     if (!window.confirm("确定删除该换水计划吗？")) return;
+    const plan = waterChangePlans.find((p) => p.id === planId);
     await dataService.deleteWaterChangePlan(planId);
     setWaterChangePlans((prev) => prev.filter((p) => p.id !== planId));
+
+    if (plan) {
+      const offlinePlans = offlineSyncStore.getWaterPlans();
+      const matchingOfflinePlan = offlinePlans.find(
+        (p) => !p.completedAt && p.tankName === plan.tankName
+      );
+      if (matchingOfflinePlan) {
+        offlineSyncStore.deleteWaterPlan(matchingOfflinePlan.id);
+      }
+    }
   };
 
   const filteredPlans = useMemo(() => {

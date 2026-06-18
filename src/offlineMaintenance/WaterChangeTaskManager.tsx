@@ -202,6 +202,41 @@ export function WaterChangeTaskManager({ onTaskCreated }: WaterChangeTaskManager
     }
   };
 
+  const getPlanStatus = (plan: OfflineWaterChangePlan): "normal" | "upcoming" | "overdue" | "completed" => {
+    if (plan.completedAt) return "completed";
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const nextDate = new Date(plan.nextDate);
+    nextDate.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) return "overdue";
+    if (diffDays <= 3) return "upcoming";
+    return "normal";
+  };
+
+  const getPlanDaysText = (plan: OfflineWaterChangePlan): string => {
+    if (plan.completedAt) return "已完成";
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const nextDate = new Date(plan.nextDate);
+    nextDate.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return "今天";
+    if (diffDays === 1) return "明天";
+    if (diffDays > 0) return `${diffDays}天后`;
+    return `逾期${Math.abs(diffDays)}天`;
+  };
+
+  const getPlanStatusText = (status: string): string => {
+    switch (status) {
+      case "normal": return "正常";
+      case "upcoming": return "即将到期";
+      case "overdue": return "已逾期";
+      case "completed": return "已完成";
+      default: return "正常";
+    }
+  };
+
   return (
     <section className="panel offline-workflow-panel">
       <div className="section-heading">
@@ -272,17 +307,28 @@ export function WaterChangeTaskManager({ onTaskCreated }: WaterChangeTaskManager
         <div className="plans-section">
           <h3 className="subsection-title">📅 换水计划</h3>
           <div className="mini-plan-list">
-            {plans.slice(0, 3).map((plan) => (
-              <div key={plan.id} className="mini-plan-item">
-                <div className="mini-plan-main">
-                  <strong>{plan.tankName}</strong>
-                  <span className="mini-plan-meta">
-                    每 {plan.cycleDays} 天 · {plan.waterRatio}% · 下次: {plan.nextDate}
-                  </span>
+            {plans.slice(0, 3).map((plan) => {
+              const status = getPlanStatus(plan);
+              const statusText = getPlanStatusText(status);
+              const daysText = getPlanDaysText(plan);
+              return (
+                <div key={plan.id} className={`mini-plan-item mini-plan-${status}`}>
+                  <div className="mini-plan-main">
+                    <div className="mini-plan-header">
+                      <strong>{plan.tankName}</strong>
+                      <span className={`mini-plan-status mini-plan-status-${status}`}>
+                        {statusText}
+                      </span>
+                    </div>
+                    <span className="mini-plan-meta">
+                      每 {plan.cycleDays} 天 · {plan.waterRatio}% · 下次: {plan.nextDate}
+                      <span className="mini-plan-days">({daysText})</span>
+                    </span>
+                  </div>
+                  <SyncBadge syncMeta={plan.syncMeta} size="sm" />
                 </div>
-                <SyncBadge syncMeta={plan.syncMeta} size="sm" />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
