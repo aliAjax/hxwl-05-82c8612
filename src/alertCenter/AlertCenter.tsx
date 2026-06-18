@@ -8,6 +8,7 @@ import {
   TankType,
   AlertMetric,
   AlertMetricValues,
+  RetestTask,
 } from "./types";
 import {
   evaluateMetricValue,
@@ -20,6 +21,7 @@ import type { CustomThresholds } from "../db/types";
 
 interface AlertCenterProps {
   alerts: AlertItem[];
+  retestTasks: RetestTask[];
   onProcessAlert: (
     alertId: string,
     treatment: TreatmentAction,
@@ -45,7 +47,7 @@ type AlertFilter = "全部" | "严重异常" | "轻微关注" | "已处理";
 
 const ALERT_FILTER_OPTIONS: AlertFilter[] = ["全部", "严重异常", "轻微关注", "已处理"];
 
-function AlertCenter({ alerts, onProcessAlert, pendingCount, targetAlertId, onTargetAlertHandled }: AlertCenterProps) {
+function AlertCenter({ alerts, retestTasks, onProcessAlert, pendingCount, targetAlertId, onTargetAlertHandled }: AlertCenterProps) {
   const [filter, setFilter] = useState<AlertFilter>("全部");
   const [processingAlertId, setProcessingAlertId] = useState<string | null>(null);
   const [treatment, setTreatment] = useState<TreatmentAction>("换水");
@@ -227,6 +229,72 @@ function AlertCenter({ alerts, onProcessAlert, pendingCount, targetAlertId, onTa
                       <dd>{alert.processedAt}</dd>
                     </div>
                   </dl>
+                  {alert.retestTaskId && (() => {
+                    const task = retestTasks.find((t) => t.id === alert.retestTaskId);
+                    if (!task) return null;
+                    const statusLabel: Record<string, { text: string; cls: string }> = {
+                      pending: { text: "待复测", cls: "retest-pending" },
+                      overdue: { text: "已逾期", cls: "retest-overdue" },
+                      completed: { text: "已复测", cls: "retest-completed" },
+                    };
+                    const status = statusLabel[task.status];
+                    const resultLabel = alert.retestResult === "recovered"
+                      ? "✓ 已恢复正常"
+                      : alert.retestResult === "not_recovered"
+                        ? "⚠ 仍未恢复，持续关注"
+                        : "";
+                    const resultCls = alert.retestResult === "recovered"
+                      ? "retest-recovered"
+                      : alert.retestResult === "not_recovered"
+                        ? "retest-not-recovered"
+                        : "";
+                    return (
+                      <div className="alert-retest-info">
+                        <div className="alert-retest-header">
+                          <span className={`alert-retest-status ${status.cls}`}>
+                            {status.text}
+                          </span>
+                          {alert.isClosed && (
+                            <span className="alert-closed-tag">✓ 已闭环</span>
+                          )}
+                        </div>
+                        <dl className="alert-info-list">
+                          <div>
+                            <dt>复测日期</dt>
+                            <dd>{task.dueDate}</dd>
+                          </div>
+                          <div>
+                            <dt>原始值</dt>
+                            <dd>{task.originalValue}{task.originalUnit}</dd>
+                          </div>
+                          {task.retestValue && (
+                            <div>
+                              <dt>复测值</dt>
+                              <dd>{task.retestValue}{task.originalUnit}</dd>
+                            </div>
+                          )}
+                          {resultLabel && (
+                            <div>
+                              <dt>复测结论</dt>
+                              <dd className={resultCls}>{resultLabel}</dd>
+                            </div>
+                          )}
+                          {task.completedAt && (
+                            <div>
+                              <dt>复测完成时间</dt>
+                              <dd>{task.completedAt}</dd>
+                            </div>
+                          )}
+                          {alert.closedAt && (
+                            <div>
+                              <dt>闭环时间</dt>
+                              <dd>{alert.closedAt}</dd>
+                            </div>
+                          )}
+                        </dl>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </article>
@@ -288,6 +356,19 @@ function AlertCenter({ alerts, onProcessAlert, pendingCount, targetAlertId, onTa
                   />
                 </label>
               </div>
+              {["复测", "换水", "停喂"].includes(treatment) && (
+                <div className="retest-notice">
+                  <span className="retest-notice-icon">📋</span>
+                  <div>
+                    <strong>系统将自动创建复测任务</strong>
+                    <p>
+                      选择「{treatment}」后，将在
+                      {treatment === "复测" ? "1天" : treatment === "停喂" ? "2天" : "3天"}后
+                      生成待办复测提醒，请届时对该鱼缸再次进行水质检测。
+                    </p>
+                  </div>
+                </div>
+              )}
               <footer className="modal-footer">
                 <button type="button" onClick={closeProcessModal}>
                   取消

@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import "./styles.css";
 import { WaterTrendAnalysis, LiveTrendDataSource } from "./trend";
 import { AlertCenter, generateAlertsFromRecord } from "./alertCenter/AlertCenter";
-import { TreatmentAction, AlertMetricValues } from "./alertCenter/types";
+import { TreatmentAction, AlertMetricValues, RetestTask } from "./alertCenter/types";
 import { dataService } from "./db";
 import type {
   Customer,
@@ -37,6 +37,7 @@ import {
   WaterChangeTaskManager,
   AlertReminderPanel,
   SyncControlPanel,
+  RetestTaskPanel,
 } from "./offlineMaintenance";
 import { createSyncMeta, offlineSyncStore } from "./offlineSync";
 
@@ -338,6 +339,7 @@ function App() {
   const [customTankName, setCustomTankName] = useState<string>("");
   const [waterRecords, setWaterRecords] = useState<WaterRecord[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [retestTasks, setRetestTasks] = useState<RetestTask[]>([]);
 
   const trendDataSource = useMemo(
     () => new LiveTrendDataSource(tanks, waterRecords, 30),
@@ -404,6 +406,7 @@ function App() {
         setWaterRecords(data.waterRecords);
         setWaterChangePlans(data.waterChangePlans);
         setAlerts(data.alerts);
+        setRetestTasks(data.retestTasks);
       } catch (error) {
         console.error("Failed to load data from IndexedDB:", error);
       } finally {
@@ -442,6 +445,16 @@ function App() {
 
   const handleJumpToAllPlans = () => {
     const el = document.querySelector(".water-change-plans");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleJumpToWaterRecordForm = () => {
+    const el = document.querySelector(".workspace");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleJumpToAllRetestTasks = () => {
+    const el = document.querySelector(".retest-task-panel");
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -600,6 +613,37 @@ function App() {
       setAlerts((prev) => [...savedAlerts, ...prev]);
     }
 
+    const pendingRetestTasks = retestTasks.filter(
+      (t) =>
+        (t.status === "pending" || t.status === "overdue") &&
+        (t.tankId === newRecord.tankId ||
+          (t.tankId === undefined && t.tankName === newRecord.tankName))
+    );
+    for (const task of pendingRetestTasks) {
+      const metricKey = task.sourceAlertMetric as keyof WaterMetrics;
+      const retestValue = newRecord.metrics[metricKey];
+      if (retestValue && retestValue.trim()) {
+        const metricStatus = evaluateMetric(
+          metricKey as keyof Omit<WaterMetrics, "waterChange">,
+          retestValue,
+          selectedTank
+        );
+        const isRecovered = metricStatus === "稳定";
+        const { task: updatedTask, alert: updatedAlert } = await dataService.completeRetestTask(
+          task.id,
+          newRecord.id,
+          retestValue,
+          isRecovered
+        );
+        setRetestTasks((prev) =>
+          prev.map((t) => (t.id === task.id ? updatedTask : t))
+        );
+        setAlerts((prev) =>
+          prev.map((a) => (a.id === task.sourceAlertId ? updatedAlert : a))
+        );
+      }
+    }
+
     setWaterFormData(emptyWaterMetrics);
     setSelectedTankForRecord("");
     setCustomTankName("");
@@ -658,6 +702,20 @@ function App() {
     setAlerts((prev) =>
       prev.map((a) => (a.id === alertId ? updatedAlert : a))
     );
+
+    const needRetest: TreatmentAction[] = ["复测", "换水", "停喂"];
+    if (needRetest.includes(treatment)) {
+      const { retestTask, updatedAlert: alertWithRetest } = await dataService.createRetestTaskFromAlert(
+        updatedAlert,
+        treatment,
+        treatmentNote,
+        handler
+      );
+      setRetestTasks((prev) => [...prev, retestTask]);
+      setAlerts((prev) =>
+        prev.map((a) => (a.id === alertId ? alertWithRetest : a))
+      );
+    }
   };
 
   const openAddPlanModal = () => {
@@ -791,6 +849,7 @@ function App() {
       setWaterRecords(data.waterRecords);
       setWaterChangePlans(data.waterChangePlans);
       setAlerts(data.alerts);
+      setRetestTasks(data.retestTasks);
       setClearConfirmOpen(false);
     } catch (error) {
       console.error("Failed to clear data:", error);
@@ -813,6 +872,7 @@ function App() {
       setWaterRecords(data.waterRecords);
       setWaterChangePlans(data.waterChangePlans);
       setAlerts(data.alerts);
+      setRetestTasks(data.retestTasks);
       setClearConfirmOpen(false);
     } catch (error) {
       console.error("Failed to reload seed data:", error);
@@ -1041,10 +1101,16 @@ function App() {
 
       <AlertCenter
         alerts={alerts}
+        retestTasks={retestTasks}
         onProcessAlert={handleProcessAlert}
         pendingCount={pendingAlertCount}
         targetAlertId={targetAlertId}
         onTargetAlertHandled={() => setTargetAlertId(null)}
+      />
+
+      <RetestTaskPanel
+        retestTasks={retestTasks}
+        onJumpToRecord={handleJumpToWaterRecordForm}
       />
 
       <WaterTrendAnalysis dataSource={trendDataSource} />
@@ -1055,11 +1121,13 @@ function App() {
         waterRecords={waterRecords}
         waterChangePlans={waterChangePlans}
         alerts={alerts}
+        retestTasks={retestTasks}
         tankTypes={TANK_TYPES}
         onJumpToAlert={handleJumpToAlert}
         onJumpToWaterChangePlan={handleJumpToWaterChangePlan}
         onJumpToAllAlerts={handleJumpToAllAlerts}
         onJumpToAllPlans={handleJumpToAllPlans}
+        onJumpToAllRetestTasks={handleJumpToAllRetestTasks}
       />
 
       <section className="tank-profiles panel">

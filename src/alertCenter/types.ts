@@ -32,6 +32,33 @@ export interface MetricThreshold {
 
 export type ThresholdConfig = Record<TankType, Record<AlertMetric, MetricThreshold>>;
 
+export type RetestTaskStatus = "pending" | "completed" | "overdue";
+
+export type RetestResult = "recovered" | "not_recovered" | null;
+
+export interface RetestTask {
+  id: string;
+  sourceAlertId: string;
+  sourceAlertMetric: AlertMetric;
+  sourceAlertMetricLabel: string;
+  tankName: string;
+  tankId?: string;
+  tankType: TankType | string;
+  triggerTreatment: TreatmentAction;
+  treatmentNote?: string;
+  originalValue: string;
+  originalUnit: string;
+  thresholdRange: string;
+  dueDate: string;
+  status: RetestTaskStatus;
+  retestRecordId?: string;
+  retestValue?: string;
+  retestResult: RetestResult;
+  createdAt: string;
+  completedAt?: string;
+  handler?: string;
+}
+
 export interface AlertItem {
   id: string;
   tankName: string;
@@ -52,6 +79,10 @@ export interface AlertItem {
   treatment?: TreatmentAction;
   treatmentNote?: string;
   handler?: string;
+  retestTaskId?: string;
+  retestResult?: RetestResult;
+  isClosed?: boolean;
+  closedAt?: string;
 }
 
 export interface AlertMetricValues {

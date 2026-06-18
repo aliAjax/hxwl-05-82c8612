@@ -1,7 +1,7 @@
 import { db } from "./database";
 import { generateSeedData, hasSeedDataBeenLoaded, markSeedDataAsLoaded } from "./seedData";
 import type { TankProfile, WaterRecord, WaterChangePlan, AppData, Customer } from "./types";
-import type { AlertItem } from "../alertCenter/types";
+import type { AlertItem, RetestTask, TreatmentAction, AlertMetric } from "../alertCenter/types";
 
 export class DataService {
   private initialized = false;
@@ -32,14 +32,15 @@ export class DataService {
   }
 
   async getAllData(): Promise<AppData> {
-    const [customers, tanks, waterRecords, waterChangePlans, alerts] = await Promise.all([
+    const [customers, tanks, waterRecords, waterChangePlans, alerts, retestTasks] = await Promise.all([
       this.getCustomers(),
       this.getTanks(),
       this.getWaterRecords(),
       this.getWaterChangePlans(),
       this.getAlerts(),
+      this.getRetestTasks(),
     ]);
-    return { customers, tanks, waterRecords, waterChangePlans, alerts };
+    return { customers, tanks, waterRecords, waterChangePlans, alerts, retestTasks };
   }
 
   async getCustomers(): Promise<Customer[]> {
@@ -251,6 +252,145 @@ export class DataService {
 
   async deleteAlert(id: string): Promise<void> {
     await db.delete("alerts", id);
+  }
+
+  async getRetestTasks(): Promise<RetestTask[]> {
+    const tasks = await db.getAll<RetestTask>("retestTasks");
+    this.checkAndUpdateOverdueRetestTasks(tasks);
+    return tasks.sort((a, b) => {
+      const statusRank: Record<string, number> = { overdue: 0, pending: 1, completed: 2 };
+      const rankA = statusRank[a.status] ?? 3;
+      const rankB = statusRank[b.status] ?? 3;
+      if (rankA !== rankB) return rankA - rankB;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+  }
+
+  private async checkAndUpdateOverdueRetestTasks(tasks: RetestTask[]): Promise<void> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let hasUpdates = false;
+    for (const task of tasks) {
+      if (task.status === "pending") {
+        const dueDate = new Date(task.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        if (dueDate.getTime() < today.getTime()) {
+          task.status = "overdue";
+          await db.put("retestTasks", task);
+          hasUpdates = true;
+        }
+      }
+    }
+  }
+
+  async getRetestTask(id: string): Promise<RetestTask | undefined> {
+    return db.get<RetestTask>("retestTasks", id);
+  }
+
+  async addRetestTask(task: Omit<RetestTask, "id" | "createdAt" | "status" | "retestResult">): Promise<RetestTask> {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const createdAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const newTask: RetestTask = {
+      ...task,
+      id: `retest-${Date.now()}`,
+      createdAt,
+      status: "pending",
+      retestResult: null,
+    };
+    await db.add("retestTasks", newTask);
+    return newTask;
+  }
+
+  async updateRetestTask(task: RetestTask): Promise<void> {
+    await db.put("retestTasks", task);
+  }
+
+  async deleteRetestTask(id: string): Promise<void> {
+    await db.delete("retestTasks", id);
+  }
+
+  async createRetestTaskFromAlert(
+    alert: AlertItem,
+    treatment: TreatmentAction,
+    treatmentNote: string,
+    handler: string
+  ): Promise<{ retestTask: RetestTask; updatedAlert: AlertItem }> {
+    const dueDaysMap: Record<TreatmentAction, number> = {
+      "复测": 1,
+      "换水": 3,
+      "停喂": 2,
+      "补菌": 3,
+    };
+    const dueDays = dueDaysMap[treatment] ?? 2;
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + dueDays);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const dueDateStr = `${dueDate.getFullYear()}-${pad(dueDate.getMonth() + 1)}-${pad(dueDate.getDate())}`;
+
+    const retestTask = await this.addRetestTask({
+      sourceAlertId: alert.id,
+      sourceAlertMetric: alert.metric,
+      sourceAlertMetricLabel: alert.metricLabel,
+      tankName: alert.tankName,
+      tankId: alert.tankId,
+      tankType: alert.tankType,
+      triggerTreatment: treatment,
+      treatmentNote,
+      originalValue: alert.value,
+      originalUnit: alert.unit,
+      thresholdRange: alert.thresholdRange,
+      dueDate: dueDateStr,
+      handler,
+    });
+
+    const updatedAlert: AlertItem = {
+      ...alert,
+      retestTaskId: retestTask.id,
+    };
+    await this.updateAlert(updatedAlert);
+
+    return { retestTask, updatedAlert };
+  }
+
+  async completeRetestTask(
+    taskId: string,
+    retestRecordId: string,
+    retestValue: string,
+    isRecovered: boolean
+  ): Promise<{ task: RetestTask; alert: AlertItem }> {
+    const task = await this.getRetestTask(taskId);
+    if (!task) {
+      throw new Error(`Retest task not found: ${taskId}`);
+    }
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const completedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+    const updatedTask: RetestTask = {
+      ...task,
+      status: "completed",
+      retestRecordId,
+      retestValue,
+      retestResult: isRecovered ? "recovered" : "not_recovered",
+      completedAt,
+    };
+    await this.updateRetestTask(updatedTask);
+
+    const alert = await db.get<AlertItem>("alerts", task.sourceAlertId);
+    let updatedAlert: AlertItem = alert ?? { id: task.sourceAlertId } as AlertItem;
+    if (alert) {
+      updatedAlert = {
+        ...alert,
+        retestResult: isRecovered ? "recovered" : "not_recovered",
+        isClosed: isRecovered,
+        closedAt: isRecovered ? completedAt : undefined,
+      };
+      await this.updateAlert(updatedAlert);
+    }
+
+    return { task: updatedTask, alert: updatedAlert };
   }
 
   async clearAllData(): Promise<AppData> {

@@ -1,4 +1,4 @@
-import type { AlertItem } from "../alertCenter/types";
+import type { AlertItem, RetestTask } from "../alertCenter/types";
 
 export type RecordStatus = "稳定" | "关注" | "异常";
 
@@ -66,7 +66,7 @@ export interface WaterChangePlan {
   createdAt: string;
 }
 
-export type { AlertItem };
+export type { AlertItem, RetestTask };
 
 export interface AppData {
   customers: Customer[];
@@ -74,9 +74,10 @@ export interface AppData {
   waterRecords: WaterRecord[];
   waterChangePlans: WaterChangePlan[];
   alerts: AlertItem[];
+  retestTasks: RetestTask[];
 }
 
-export type StoreName = "customers" | "tanks" | "waterRecords" | "waterChangePlans" | "alerts";
+export type StoreName = "customers" | "tanks" | "waterRecords" | "waterChangePlans" | "alerts" | "retestTasks";
 
 export const STORE_NAMES: StoreName[] = [
   "customers",
@@ -84,4 +85,5 @@ export const STORE_NAMES: StoreName[] = [
   "waterRecords",
   "waterChangePlans",
   "alerts",
+  "retestTasks",
 ];

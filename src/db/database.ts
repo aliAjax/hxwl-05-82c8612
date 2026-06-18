@@ -1,7 +1,7 @@
 import { STORE_NAMES, type StoreName } from "./types";
 
 const DB_NAME = "aquarium_water_db";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export class Database {
   private db: IDBDatabase | null = null;
@@ -67,6 +67,16 @@ export class Database {
           alertStore.createIndex("status", "status", { unique: false });
           alertStore.createIndex("severity", "severity", { unique: false });
           alertStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains("retestTasks")) {
+          const retestStore = db.createObjectStore("retestTasks", { keyPath: "id" });
+          retestStore.createIndex("tankId", "tankId", { unique: false });
+          retestStore.createIndex("tankName", "tankName", { unique: false });
+          retestStore.createIndex("status", "status", { unique: false });
+          retestStore.createIndex("dueDate", "dueDate", { unique: false });
+          retestStore.createIndex("sourceAlertId", "sourceAlertId", { unique: false });
+          retestStore.createIndex("createdAt", "createdAt", { unique: false });
         }
       };
     });

@@ -6,6 +6,7 @@ import type {
   WaterChangePlan,
   RecordStatus,
   AlertItem,
+  RetestTask,
 } from "../db/types";
 import type { TankDashboardInfo, CustomerDashboardInfo, RiskFilter, ViewMode } from "./types";
 import { TankDetailPanel } from "./TankDetailPanel";
@@ -19,11 +20,13 @@ interface DashboardProps {
   waterRecords: WaterRecord[];
   waterChangePlans: WaterChangePlan[];
   alerts: AlertItem[];
+  retestTasks: RetestTask[];
   tankTypes: string[];
   onJumpToAlert?: (alertId: string) => void;
   onJumpToWaterChangePlan?: (planId: string) => void;
   onJumpToAllAlerts?: () => void;
   onJumpToAllPlans?: () => void;
+  onJumpToAllRetestTasks?: () => void;
 }
 
 const aggregateRisk = (risks: RecordStatus[]): RecordStatus => {
@@ -103,11 +106,13 @@ export function Dashboard({
   waterRecords,
   waterChangePlans,
   alerts,
+  retestTasks,
   tankTypes,
   onJumpToAlert,
   onJumpToWaterChangePlan,
   onJumpToAllAlerts,
   onJumpToAllPlans,
+  onJumpToAllRetestTasks,
 }: DashboardProps) {
   const [customerFilter, setCustomerFilter] = useState<string>("全部");
   const [maintainerFilter, setMaintainerFilter] = useState<string>("全部");
@@ -243,14 +248,22 @@ export function Dashboard({
     const filteredInfos = filteredTankIds
       .map((id: string) => tankInfoMap.get(id))
       .filter(Boolean) as TankDashboardInfo[];
+    const pendingRetests = retestTasks.filter(
+      (t) => t.status === "pending" || t.status === "overdue"
+    ).length;
+    const overdueRetests = retestTasks.filter((t) => t.status === "overdue").length;
+    const completedRetests = retestTasks.filter((t) => t.status === "completed").length;
     return {
       total: filteredInfos.length,
       ok: filteredInfos.filter((t) => t.riskAssessment.riskLevel === "低风险").length,
       medium: filteredInfos.filter((t) => t.riskAssessment.riskLevel === "中风险").length,
       watch: filteredInfos.filter((t) => t.riskAssessment.riskLevel === "高风险").length,
       danger: filteredInfos.filter((t) => t.riskAssessment.riskLevel === "严重风险").length,
+      pendingRetests,
+      overdueRetests,
+      completedRetests,
     };
-  }, [filteredTankIds, tankInfoMap]);
+  }, [filteredTankIds, tankInfoMap, retestTasks]);
 
   const selectedTankInfo = selectedTankId
     ? tankInfoMap.get(selectedTankId)
@@ -406,6 +419,18 @@ export function Dashboard({
           <span className="dashboard-stat-label">严重风险</span>
           <strong className="dashboard-stat-value">{stats.danger}</strong>
         </div>
+        {onJumpToAllRetestTasks && (
+          <div
+            className={`dashboard-stat-item cursor-pointer ${stats.overdueRetests > 0 ? "dashboard-stat-danger" : stats.pendingRetests > 0 ? "dashboard-stat-watch" : "dashboard-stat-ok"}`}
+            onClick={onJumpToAllRetestTasks}
+            title="点击查看复测任务"
+          >
+            <span className="dashboard-stat-label">
+              复测待办{stats.overdueRetests > 0 && ` (逾期${stats.overdueRetests})`}
+            </span>
+            <strong className="dashboard-stat-value">{stats.pendingRetests}</strong>
+          </div>
+        )}
       </div>
 
       <div className="dashboard-filters">
