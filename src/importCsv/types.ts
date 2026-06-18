@@ -74,3 +74,8 @@ export interface ValidationResult {
   errors: string[];
   missingFields: string[];
 }
+
+export interface ImportRecordItem {
+  record: PreparedRecord;
+  alerts: Omit<import("../alertCenter/types").AlertItem, "id">[];
+}

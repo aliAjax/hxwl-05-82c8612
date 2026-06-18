@@ -30,7 +30,7 @@ import {
 } from "./db/tankTemplates";
 import { Dashboard } from "./dashboard";
 import { ImportWaterRecordsModal } from "./importCsv";
-import type { PreparedRecord } from "./importCsv";
+import type { ImportRecordItem } from "./importCsv";
 import type { AlertItem } from "./alertCenter/types";
 import {
   WaterTestRecorder,
@@ -353,40 +353,30 @@ function App() {
 
   const planFilterOptions = ["全部", "已逾期", "即将到期", "正常", "已完成"];
 
-  const handleImportRecords = async (
-    records: PreparedRecord[],
-    alerts: Omit<AlertItem, "id">[]
-  ) => {
+  const handleImportRecords = async (items: ImportRecordItem[]) => {
     const newRecords: WaterRecord[] = [];
+    const allSavedAlerts: AlertItem[] = [];
 
-    for (const record of records) {
+    for (const item of items) {
       const newRecordData: Omit<WaterRecord, "id"> = {
-        tankName: record.tankName,
-        tankId: record.tankId,
-        recordedAt: record.recordedAt,
-        metrics: { ...record.metrics },
-        status: record.status,
-        note: record.note,
+        tankName: item.record.tankName,
+        tankId: item.record.tankId,
+        recordedAt: item.record.recordedAt,
+        metrics: { ...item.record.metrics },
+        status: item.record.status,
+        note: item.record.note,
       };
       const newRecord = await dataService.addWaterRecord(newRecordData);
       newRecords.push(newRecord);
-    }
 
-    let savedAlerts: AlertItem[] = [];
-    if (alerts.length > 0) {
-      const alertsWithRecordIds = alerts.map((alert, index) => {
-        const correspondingRecord = records[index];
-        const matchingNewRecord = newRecords.find(
-          (r) =>
-            r.tankName === correspondingRecord?.tankName &&
-            r.recordedAt === correspondingRecord?.recordedAt
-        );
-        return {
+      if (item.alerts.length > 0) {
+        const alertsWithRecordId = item.alerts.map((alert) => ({
           ...alert,
-          recordId: matchingNewRecord?.id || alert.recordId,
-        };
-      });
-      savedAlerts = await dataService.addAlerts(alertsWithRecordIds);
+          recordId: newRecord.id,
+        }));
+        const savedAlerts = await dataService.addAlerts(alertsWithRecordId);
+        allSavedAlerts.push(...savedAlerts);
+      }
     }
 
     setWaterRecords((prev) => {
@@ -397,8 +387,8 @@ function App() {
       );
       return combined;
     });
-    if (savedAlerts.length > 0) {
-      setAlerts((prev) => [...savedAlerts, ...prev]);
+    if (allSavedAlerts.length > 0) {
+      setAlerts((prev) => [...allSavedAlerts, ...prev]);
     }
   };
 

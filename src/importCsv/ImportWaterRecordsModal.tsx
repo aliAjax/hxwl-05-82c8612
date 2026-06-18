@@ -12,7 +12,7 @@ import {
   cleanNumeric,
   parseDateTime,
 } from "./csvParser";
-import type { EditableRow, EditableParseResult, PreparedRecord } from "./types";
+import type { EditableRow, EditableParseResult, ImportRecordItem, PreparedRecord } from "./types";
 import type { TankProfile, RecordStatus, WaterMetrics } from "../db/types";
 import { generateAlertsFromRecord } from "../alertCenter/AlertCenter";
 import type { AlertItem, AlertMetricValues } from "../alertCenter/types";
@@ -116,7 +116,7 @@ export interface ImportWaterRecordsModalProps {
   open: boolean;
   onClose: () => void;
   tanks: TankProfile[];
-  onImport: (records: PreparedRecord[], alerts: Omit<AlertItem, "id">[]) => Promise<void>;
+  onImport: (items: ImportRecordItem[]) => Promise<void>;
 }
 
 type PreviewFilter = "all" | "valid" | "error" | "unmatched";
@@ -288,12 +288,11 @@ export function ImportWaterRecordsModal({
     }
   }, [editableResult, activeFilter]);
 
-  const prepareRecords = useCallback((): { records: PreparedRecord[]; alerts: Omit<AlertItem, "id">[] } => {
-    if (!editableResult) return { records: [], alerts: [] };
+  const prepareRecords = useCallback((): ImportRecordItem[] => {
+    if (!editableResult) return [];
 
     const validRows = editableResult.rows.filter((r) => !r.isError && r.tankName.trim());
-    const records: PreparedRecord[] = [];
-    const alerts: Omit<AlertItem, "id">[] = [];
+    const items: ImportRecordItem[] = [];
 
     for (const row of validRows) {
       const tank = row.matchedTankId
@@ -305,14 +304,14 @@ export function ImportWaterRecordsModal({
       const tankName = tank?.name || row.tankName;
       const tankId = tank?.id;
 
-      records.push({
+      const record: PreparedRecord = {
         tankName,
         tankId,
         recordedAt: row.recordedAt,
         metrics: { ...row.metrics },
         status,
         note,
-      });
+      };
 
       const tankType = tank?.tankType || "草缸";
       const customThresholds = tank?.customThresholds;
@@ -325,10 +324,14 @@ export function ImportWaterRecordsModal({
         row.recordedAt,
         customThresholds
       );
-      alerts.push(...recordAlerts.map((a) => ({ ...a, id: undefined! } as Omit<AlertItem, "id">)));
+
+      items.push({
+        record,
+        alerts: recordAlerts.map((a) => ({ ...a, id: undefined! } as Omit<AlertItem, "id">)),
+      });
     }
 
-    return { records, alerts };
+    return items;
   }, [editableResult, tanks]);
 
   const handleImport = async () => {
@@ -353,8 +356,8 @@ export function ImportWaterRecordsModal({
 
     setIsImporting(true);
     try {
-      const { records, alerts } = prepareRecords();
-      await onImport(records, alerts);
+      const items = prepareRecords();
+      await onImport(items);
       handleClear();
       onClose();
     } finally {

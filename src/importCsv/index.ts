@@ -28,4 +28,5 @@ export type {
   EditableParseResult,
   ValidationResult,
   TankMatchStatus,
+  ImportRecordItem,
 } from "./types";
