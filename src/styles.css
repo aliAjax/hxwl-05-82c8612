@@ -462,6 +462,27 @@ label {
   word-break: break-word;
 }
 
+.tank-thresholds-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+
+.tank-thresholds-label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.tank-thresholds-values {
+  margin: 0;
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -492,6 +513,10 @@ label {
   overflow-y: auto;
   box-shadow: 0 25px 60px rgba(15, 23, 42, 0.25);
   animation: slideUp 0.22s ease;
+}
+
+.modal-content-large {
+  max-width: 760px;
 }
 
 .modal-header {
@@ -559,6 +584,159 @@ label {
 
 .field-full {
   grid-column: 1 / -1;
+}
+
+.thresholds-section {
+  margin-top: 20px;
+  padding: 18px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.thresholds-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.thresholds-header h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  color: #172033;
+}
+
+.thresholds-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.template-apply-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.template-apply-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  margin-right: 2px;
+}
+
+.template-apply-btn {
+  min-height: 30px;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: #475569;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.template-apply-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.template-apply-btn.template-apply-active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.thresholds-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.threshold-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.threshold-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #f1f5f9;
+  border-bottom: 1px solid var(--border);
+}
+
+.threshold-card-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #172033;
+}
+
+.threshold-card-unit {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.threshold-card-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.threshold-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.threshold-range-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  min-width: 60px;
+}
+
+.threshold-range-watch {
+  color: #b45309;
+}
+
+.threshold-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.threshold-range-inputs input {
+  flex: 1;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.threshold-range-sep {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.threshold-input-unit {
+  font-size: 12px;
+  color: #64748b;
+  min-width: 28px;
 }
 
 .record-index.status-ok {
@@ -1191,6 +1369,18 @@ button:disabled {
 
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .thresholds-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .thresholds-header {
+    flex-direction: column;
+  }
+
+  .template-apply-group {
+    width: 100%;
   }
 
   .plan-grid {

@@ -12,7 +12,22 @@ import type {
   TankProfile,
   PlanStatus,
   WaterChangePlan,
+  CustomThresholds,
+  ThresholdMetric,
+  MetricRange,
 } from "./db/types";
+import {
+  TANK_TEMPLATES,
+  TANK_TEMPLATE_TYPES,
+  TEMPLATE_METRIC_LABELS,
+  TEMPLATE_METRIC_UNITS,
+  TEMPLATE_METRIC_STEPS,
+  TEMPLATE_METRIC_ORDER,
+  cloneTemplateThresholds,
+  getAllEffectiveThresholds,
+  getEffectiveThresholds,
+  getTemplateThresholds,
+} from "./db/tankTemplates";
 import { Dashboard } from "./dashboard";
 import { ImportWaterRecordsModal } from "./importCsv";
 import type { PreparedRecord } from "./importCsv";
@@ -125,6 +140,7 @@ const emptyForm: Omit<TankProfile, "id"> = {
   setupDate: "",
   mainCreatures: "",
   maintainer: "",
+  customThresholds: cloneTemplateThresholds("草缸"),
 };
 
 const emptyPlanForm: Omit<WaterChangePlan, "id" | "createdAt"> = {
@@ -146,19 +162,40 @@ function MetricCard({ label, value, index }: { label: string; value: string; ind
   );
 }
 
+function getMetricRange(
+  key: keyof Omit<WaterMetrics, "waterChange">,
+  tank?: TankProfile
+): { ok: [number, number]; watch: [number, number]; unit: string; label: string } {
+  const customizable: ThresholdMetric[] = ["ph", "nitrate", "hardness", "temperature"];
+  if (tank && (customizable as string[]).includes(key)) {
+    const eff = getEffectiveThresholds(tank, key as ThresholdMetric);
+    return {
+      ok: eff.ok,
+      watch: eff.watch,
+      unit: TEMPLATE_METRIC_UNITS[key as ThresholdMetric],
+      label: TEMPLATE_METRIC_LABELS[key as ThresholdMetric],
+    };
+  }
+  return METRIC_RANGES[key];
+}
+
 function evaluateMetric(
   key: keyof Omit<WaterMetrics, "waterChange">,
-  raw: string
+  raw: string,
+  tank?: TankProfile
 ): RecordStatus {
   const value = parseFloat(raw);
   if (isNaN(value)) return "稳定";
-  const range = METRIC_RANGES[key];
+  const range = getMetricRange(key, tank);
   if (value < range.watch[0] || value > range.watch[1]) return "异常";
   if (value < range.ok[0] || value > range.ok[1]) return "关注";
   return "稳定";
 }
 
-function evaluateRecordStatus(metrics: WaterMetrics): { status: RecordStatus; note: string } {
+function evaluateRecordStatus(
+  metrics: WaterMetrics,
+  tank?: TankProfile
+): { status: RecordStatus; note: string } {
   const metricKeys = Object.keys(METRIC_RANGES) as (keyof Omit<WaterMetrics, "waterChange">)[];
   const issues: { key: keyof Omit<WaterMetrics, "waterChange">; status: RecordStatus }[] = [];
   let overall: RecordStatus = "稳定";
@@ -166,7 +203,7 @@ function evaluateRecordStatus(metrics: WaterMetrics): { status: RecordStatus; no
   for (const key of metricKeys) {
     const raw = metrics[key];
     if (!raw.trim()) continue;
-    const st = evaluateMetric(key, raw);
+    const st = evaluateMetric(key, raw, tank);
     if (st !== "稳定") {
       issues.push({ key, status: st });
     }
@@ -185,7 +222,7 @@ function evaluateRecordStatus(metrics: WaterMetrics): { status: RecordStatus; no
       parts.push(
         dangerItems
           .map((i) => {
-            const r = METRIC_RANGES[i.key];
+            const r = getMetricRange(i.key, tank);
             return `${r.label}${metrics[i.key]}${r.unit}异常`;
           })
           .join("、")
@@ -194,7 +231,10 @@ function evaluateRecordStatus(metrics: WaterMetrics): { status: RecordStatus; no
     if (watchItems.length > 0) {
       parts.push(
         watchItems
-          .map((i) => `${METRIC_RANGES[i.key].label}${metrics[i.key]}需关注`)
+          .map((i) => {
+            const r = getMetricRange(i.key, tank);
+            return `${r.label}${metrics[i.key]}需关注`;
+          })
           .join("、")
       );
     }
@@ -284,6 +324,9 @@ function App() {
     const newAlerts: AlertItem[] = [];
 
     for (const record of records) {
+      const tank = record.tankId
+        ? tanks.find((t) => t.id === record.tankId)
+        : undefined;
       const newRecordData: Omit<WaterRecord, "id"> = {
         tankName: record.tankName,
         tankId: record.tankId,
@@ -295,16 +338,16 @@ function App() {
       const newRecord = await dataService.addWaterRecord(newRecordData);
       newRecords.push(newRecord);
 
-      const tankType = record.tankId
-        ? tanks.find((t) => t.id === record.tankId)?.tankType || "草缸"
-        : "草缸";
+      const tankType = tank?.tankType || "草缸";
+      const customThresholds = tank?.customThresholds;
       const recordAlerts = generateAlertsFromRecord(
         newRecord.id,
         record.tankName,
         record.tankId,
         tankType,
         record.metrics as unknown as AlertMetricValues,
-        record.recordedAt
+        record.recordedAt,
+        customThresholds
       );
       if (recordAlerts.length > 0) {
         const savedAlerts = await dataService.addAlerts(
@@ -348,12 +391,15 @@ function App() {
 
   const openAddModal = () => {
     setEditingId(null);
-    setFormData(emptyForm);
+    setFormData({ ...emptyForm, customThresholds: cloneTemplateThresholds("草缸") });
     setModalOpen(true);
   };
 
   const openEditModal = (tank: TankProfile) => {
     setEditingId(tank.id);
+    const customThresholds = tank.customThresholds
+      ? JSON.parse(JSON.stringify(tank.customThresholds))
+      : cloneTemplateThresholds(tank.tankType);
     setFormData({
       name: tank.name,
       tankType: tank.tankType,
@@ -361,6 +407,7 @@ function App() {
       setupDate: tank.setupDate,
       mainCreatures: tank.mainCreatures,
       maintainer: tank.maintainer,
+      customThresholds,
     });
     setModalOpen(true);
   };
@@ -396,7 +443,49 @@ function App() {
   };
 
   const updateForm = (key: keyof Omit<TankProfile, "id">, value: string) => {
-    setFormData((prev) => ({ ...prev, [key]: value }));
+    setFormData((prev) => {
+      if (key === "tankType") {
+        return {
+          ...prev,
+          [key]: value,
+          customThresholds: cloneTemplateThresholds(value),
+        };
+      }
+      return { ...prev, [key]: value };
+    });
+  };
+
+  const updateThreshold = (
+    metric: ThresholdMetric,
+    rangeKey: "ok" | "watch",
+    index: 0 | 1,
+    value: string
+  ) => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return;
+    setFormData((prev) => {
+      const currentThresholds = prev.customThresholds || cloneTemplateThresholds(prev.tankType);
+      const metricRange = currentThresholds[metric] || { ok: [0, 0], watch: [0, 0] };
+      const newRange: [number, number] = [...metricRange[rangeKey]] as [number, number];
+      newRange[index] = numValue;
+      return {
+        ...prev,
+        customThresholds: {
+          ...currentThresholds,
+          [metric]: {
+            ...metricRange,
+            [rangeKey]: newRange,
+          },
+        },
+      };
+    });
+  };
+
+  const applyTemplateThresholds = (templateType: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      customThresholds: cloneTemplateThresholds(templateType),
+    }));
   };
 
   const updateWaterForm = (key: keyof WaterMetrics, value: string) => {
@@ -405,8 +494,11 @@ function App() {
 
   const handleWaterRecordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const selectedTank = selectedTankForRecord
+      ? tanks.find((t) => t.id === selectedTankForRecord)
+      : undefined;
     const tankName =
-      (selectedTankForRecord && tanks.find((t) => t.id === selectedTankForRecord)?.name) ||
+      (selectedTank && selectedTank.name) ||
       customTankName.trim();
     if (!tankName) {
       alert("请选择鱼缸或填写鱼缸名称");
@@ -419,7 +511,7 @@ function App() {
       alert("请至少填写一项水质指标");
       return;
     }
-    const { status, note } = evaluateRecordStatus(waterFormData);
+    const { status, note } = evaluateRecordStatus(waterFormData, selectedTank);
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
     const recordedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -434,16 +526,16 @@ function App() {
     const newRecord = await dataService.addWaterRecord(newRecordData);
     setWaterRecords((prev) => [newRecord, ...prev]);
 
-    const tankType = selectedTankForRecord
-      ? tanks.find((t) => t.id === selectedTankForRecord)?.tankType || "草缸"
-      : "草缸";
+    const tankType = selectedTank?.tankType || "草缸";
+    const customThresholds = selectedTank?.customThresholds;
     const newAlerts = generateAlertsFromRecord(
       newRecord.id,
       tankName,
       selectedTankForRecord || undefined,
       tankType,
       waterFormData as unknown as AlertMetricValues,
-      recordedAt
+      recordedAt,
+      customThresholds
     );
     if (newAlerts.length > 0) {
       const savedAlerts = await dataService.addAlerts(
@@ -468,11 +560,11 @@ function App() {
     }
   };
 
-  const buildMetricSummary = (metrics: WaterMetrics) => {
+  const buildMetricSummary = (metrics: WaterMetrics, tank?: TankProfile) => {
     const parts: string[] = [];
     (Object.keys(METRIC_RANGES) as (keyof Omit<WaterMetrics, "waterChange">)[]).forEach((k) => {
       if (metrics[k].trim()) {
-        const r = METRIC_RANGES[k];
+        const r = getMetricRange(k, tank);
         parts.push(`${r.label} ${metrics[k]}${r.unit}`);
       }
     });
@@ -480,6 +572,16 @@ function App() {
       parts.push(`换水量 ${metrics.waterChange}`);
     }
     return parts.join(" · ");
+  };
+
+  const buildTankThresholdsSummary = (tank: TankProfile) => {
+    const effective = getAllEffectiveThresholds(tank);
+    return TEMPLATE_METRIC_ORDER.map((m) => {
+      const r = effective[m];
+      const label = TEMPLATE_METRIC_LABELS[m];
+      const unit = TEMPLATE_METRIC_UNITS[m];
+      return `${label} ${r.ok[0]}${unit}~${r.ok[1]}${unit}`;
+    }).join(" · ");
   };
 
   const displayRecords = useMemo(() => {
@@ -809,26 +911,31 @@ function App() {
           </div>
         ) : (
           <div className="record-list">
-            {displayRecords.map((record, index) => (
-              <article key={record.id} className="record-card">
-                <div className={`record-index ${getStatusClass(record.status)}`}>
-                  {String(index + 1).padStart(2, "0")}
-                </div>
-                <div className="record-main">
-                  <header className="record-header">
-                    <h3>{record.tankName}</h3>
-                    <span className={`record-status record-status-${record.status}`}>
-                      {record.status}
-                    </span>
-                  </header>
-                  <p className="record-metrics">
-                    {buildMetricSummary(record.metrics) || "未填写指标"}
-                  </p>
-                  <p className="record-note">{record.note}</p>
-                  <p className="record-time">{record.recordedAt}</p>
-                </div>
-              </article>
-            ))}
+            {displayRecords.map((record, index) => {
+              const recordTank = record.tankId
+                ? tanks.find((t) => t.id === record.tankId)
+                : undefined;
+              return (
+                <article key={record.id} className="record-card">
+                  <div className={`record-index ${getStatusClass(record.status)}`}>
+                    {String(index + 1).padStart(2, "0")}
+                  </div>
+                  <div className="record-main">
+                    <header className="record-header">
+                      <h3>{record.tankName}</h3>
+                      <span className={`record-status record-status-${record.status}`}>
+                        {record.status}
+                      </span>
+                    </header>
+                    <p className="record-metrics">
+                      {buildMetricSummary(record.metrics, recordTank) || "未填写指标"}
+                    </p>
+                    <p className="record-note">{record.note}</p>
+                    <p className="record-time">{record.recordedAt}</p>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
@@ -937,6 +1044,12 @@ function App() {
                     <dd>{tank.maintainer || "—"}</dd>
                   </div>
                 </dl>
+                <div className="tank-thresholds-section">
+                  <p className="tank-thresholds-label">适养参数范围</p>
+                  <p className="tank-thresholds-values">
+                    {buildTankThresholdsSummary(tank)}
+                  </p>
+                </div>
               </article>
             ))}
           </div>
@@ -1181,7 +1294,7 @@ function App() {
 
       {modalOpen && (
         <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content modal-content-large" onClick={(e) => e.stopPropagation()}>
             <header className="modal-header">
               <h2>{editingId ? "编辑鱼缸档案" : "新增鱼缸档案"}</h2>
               <button className="modal-close" onClick={closeModal}>
@@ -1249,6 +1362,92 @@ function App() {
                   />
                 </label>
               </div>
+
+              <div className="thresholds-section">
+                <div className="thresholds-header">
+                  <div>
+                    <h3>适养参数模板</h3>
+                    <p className="thresholds-hint">
+                      选择缸型后自动加载默认参数，可手动微调安全范围与关注范围。
+                    </p>
+                  </div>
+                  <div className="template-apply-group">
+                    <span className="template-apply-label">套用模板：</span>
+                    {TANK_TEMPLATE_TYPES.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        className={`template-apply-btn ${formData.tankType === t ? "template-apply-active" : ""}`}
+                        onClick={() => applyTemplateThresholds(t)}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="thresholds-grid">
+                  {TEMPLATE_METRIC_ORDER.map((metric) => {
+                    const label = TEMPLATE_METRIC_LABELS[metric];
+                    const unit = TEMPLATE_METRIC_UNITS[metric];
+                    const step = TEMPLATE_METRIC_STEPS[metric];
+                    const current = formData.customThresholds?.[metric];
+                    const okMin = current?.ok[0] ?? 0;
+                    const okMax = current?.ok[1] ?? 0;
+                    const watchMin = current?.watch[0] ?? 0;
+                    const watchMax = current?.watch[1] ?? 0;
+                    return (
+                      <div key={metric} className="threshold-card">
+                        <header className="threshold-card-header">
+                          <span className="threshold-card-label">{label}</span>
+                          {unit && <span className="threshold-card-unit">{unit}</span>}
+                        </header>
+                        <div className="threshold-card-body">
+                          <div className="threshold-row">
+                            <span className="threshold-range-label">安全范围</span>
+                            <div className="threshold-range-inputs">
+                              <input
+                                type="number"
+                                step={step}
+                                value={okMin}
+                                onChange={(e) => updateThreshold(metric, "ok", 0, e.target.value)}
+                              />
+                              <span className="threshold-range-sep">~</span>
+                              <input
+                                type="number"
+                                step={step}
+                                value={okMax}
+                                onChange={(e) => updateThreshold(metric, "ok", 1, e.target.value)}
+                              />
+                              {unit && <span className="threshold-input-unit">{unit}</span>}
+                            </div>
+                          </div>
+                          <div className="threshold-row">
+                            <span className="threshold-range-label threshold-range-watch">关注范围</span>
+                            <div className="threshold-range-inputs">
+                              <input
+                                type="number"
+                                step={step}
+                                value={watchMin}
+                                onChange={(e) => updateThreshold(metric, "watch", 0, e.target.value)}
+                              />
+                              <span className="threshold-range-sep">~</span>
+                              <input
+                                type="number"
+                                step={step}
+                                value={watchMax}
+                                onChange={(e) => updateThreshold(metric, "watch", 1, e.target.value)}
+                              />
+                              {unit && <span className="threshold-input-unit">{unit}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <footer className="modal-footer">
                 <button type="button" onClick={closeModal}>
                   取消

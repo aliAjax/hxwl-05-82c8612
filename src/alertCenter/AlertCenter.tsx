@@ -16,6 +16,7 @@ import {
   buildAlertDescription,
   getMetricThreshold,
 } from "./thresholdConfig";
+import type { CustomThresholds } from "../db/types";
 
 interface AlertCenterProps {
   alerts: AlertItem[];
@@ -300,7 +301,8 @@ export function generateAlertsFromRecord(
   tankId: string | undefined,
   tankType: TankType | string,
   metrics: AlertMetricValues,
-  recordedAt: string
+  recordedAt: string,
+  customThresholds?: CustomThresholds
 ): AlertItem[] {
   const alerts: AlertItem[] = [];
   const metricKeys = getAlertMetricKeys();
@@ -309,7 +311,7 @@ export function generateAlertsFromRecord(
     const rawValue = metrics[key];
     if (!rawValue.trim()) continue;
 
-    const result = evaluateMetricValue(tankType, key, rawValue);
+    const result = evaluateMetricValue(tankType, key, rawValue, customThresholds);
     if (!result || result.status === "ok") continue;
 
     const threshold = result.threshold;

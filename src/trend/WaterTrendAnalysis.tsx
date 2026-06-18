@@ -1,5 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { TrendMetric, TREND_METRICS, METRIC_RANGES, TankTrendData } from "./types";
+import {
+  TrendMetric,
+  TREND_METRICS,
+  METRIC_RANGES,
+  TankTrendData,
+  getMetricRangeByTankType,
+} from "./types";
 import { TrendDataSource } from "./dataSource";
 import { TrendChart } from "./TrendChart";
 
@@ -71,7 +77,10 @@ export function WaterTrendAnalysis({
     return result;
   }, [trendData, activeMetric]);
 
-  const range = METRIC_RANGES[activeMetric];
+  const range = useMemo(() => {
+    if (activeTankType === "全部") return METRIC_RANGES[activeMetric];
+    return getMetricRangeByTankType(activeMetric, activeTankType);
+  }, [activeMetric, activeTankType]);
 
   const formatValue = (value: number) => {
     if (Math.abs(value) < 1) return value.toFixed(3);

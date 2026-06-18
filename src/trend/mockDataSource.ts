@@ -5,6 +5,7 @@ import {
   TREND_METRICS,
   evaluateDataPoint,
   METRIC_RANGES,
+  getMetricRangeByTankType,
 } from "./types";
 import { TrendDataSource } from "./dataSource";
 
@@ -67,13 +68,14 @@ function generateDataPoints(
   baseValue: number,
   volatility: number,
   days: number,
-  seed: number
+  seed: number,
+  tankType: string
 ): TrendDataPoint[] {
   const random = seededRandom(seed);
   const points: TrendDataPoint[] = [];
   const now = Date.now();
   const dayMs = 24 * 60 * 60 * 1000;
-  const range = METRIC_RANGES[metric];
+  const range = getMetricRangeByTankType(metric, tankType);
   const isZeroRange = range.ok[0] === 0 && range.ok[1] === 0;
 
   for (let i = days - 1; i >= 0; i--) {
@@ -107,7 +109,7 @@ function generateDataPoints(
     points.push({
       timestamp,
       value,
-      status: evaluateDataPoint(metric, value),
+      status: evaluateDataPoint(metric, value, tankType),
     });
   }
 
@@ -125,7 +127,8 @@ function generateTankData(tankConfig: MockTankConfig, days: number): TankTrendDa
       tankConfig.baseValues[metric],
       tankConfig.volatility[metric],
       days,
-      seed
+      seed,
+      tankConfig.type
     );
     seedOffset += 100;
   }

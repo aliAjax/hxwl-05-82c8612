@@ -14,6 +14,15 @@ export interface WaterMetrics {
 
 export type PlanStatus = "normal" | "upcoming" | "overdue" | "completed";
 
+export type ThresholdMetric = "ph" | "nitrate" | "hardness" | "temperature";
+
+export interface MetricRange {
+  ok: [number, number];
+  watch: [number, number];
+}
+
+export type CustomThresholds = Partial<Record<ThresholdMetric, MetricRange>>;
+
 export interface Customer {
   id: string;
   name: string;
@@ -32,6 +41,7 @@ export interface TankProfile {
   mainCreatures: string;
   maintainer: string;
   customerId?: string;
+  customThresholds?: CustomThresholds;
 }
 
 export interface WaterRecord {

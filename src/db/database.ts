@@ -1,7 +1,7 @@
 import { STORE_NAMES, type StoreName } from "./types";
 
 const DB_NAME = "aquarium_water_db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export class Database {
   private db: IDBDatabase | null = null;

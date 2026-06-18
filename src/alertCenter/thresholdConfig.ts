@@ -5,6 +5,8 @@ import {
   ThresholdConfig,
   TANK_TYPES,
 } from "./types";
+import type { CustomThresholds, ThresholdMetric } from "../db/types";
+import { TEMPLATE_METRIC_UNITS, TEMPLATE_METRIC_LABELS } from "../db/tankTemplates";
 
 export const DEFAULT_THRESHOLDS: ThresholdConfig = {
   草缸: {
@@ -50,25 +52,51 @@ const ALERT_METRIC_KEYS: AlertMetric[] = [
   "temperature",
 ];
 
+const CUSTOMIZABLE_METRICS: ThresholdMetric[] = [
+  "ph",
+  "nitrate",
+  "hardness",
+  "temperature",
+];
+
 export function getMetricThreshold(
   tankType: TankType | string,
-  metric: AlertMetric
+  metric: AlertMetric,
+  customThresholds?: CustomThresholds
 ): MetricThreshold {
   const validType = (TANK_TYPES as string[]).includes(tankType)
     ? (tankType as TankType)
     : "草缸";
-  return DEFAULT_THRESHOLDS[validType][metric];
+  const defaultThreshold = DEFAULT_THRESHOLDS[validType][metric];
+
+  if (
+    customThresholds &&
+    (CUSTOMIZABLE_METRICS as string[]).includes(metric)
+  ) {
+    const custom = customThresholds[metric as ThresholdMetric];
+    if (custom) {
+      return {
+        ok: custom.ok,
+        mild: custom.watch,
+        unit: TEMPLATE_METRIC_UNITS[metric as ThresholdMetric],
+        label: TEMPLATE_METRIC_LABELS[metric as ThresholdMetric],
+      };
+    }
+  }
+
+  return defaultThreshold;
 }
 
 export function evaluateMetricValue(
   tankType: TankType | string,
   metric: AlertMetric,
-  rawValue: string
+  rawValue: string,
+  customThresholds?: CustomThresholds
 ): { status: "ok" | "mild" | "severe"; threshold: MetricThreshold } | null {
   const value = parseFloat(rawValue);
   if (isNaN(value)) return null;
 
-  const threshold = getMetricThreshold(tankType, metric);
+  const threshold = getMetricThreshold(tankType, metric, customThresholds);
   const [mildMin, mildMax] = threshold.mild;
   const [okMin, okMax] = threshold.ok;
 
