@@ -618,10 +618,22 @@ export function Dashboard({
               a.status === "pending"
           )}
           onClose={() => setTraceabilityTankId(null)}
-          onJumpToAlert={onJumpToAlert}
-          onJumpToWaterChangePlan={onJumpToWaterChangePlan}
-          onJumpToAllAlerts={onJumpToAllAlerts}
-          onJumpToAllPlans={onJumpToAllPlans}
+          onJumpToAlert={(alertId) => {
+            setTraceabilityTankId(null);
+            setTimeout(() => onJumpToAlert?.(alertId), 50);
+          }}
+          onJumpToWaterChangePlan={(planId) => {
+            setTraceabilityTankId(null);
+            setTimeout(() => onJumpToWaterChangePlan?.(planId), 50);
+          }}
+          onJumpToAllAlerts={() => {
+            setTraceabilityTankId(null);
+            setTimeout(() => onJumpToAllAlerts?.(), 50);
+          }}
+          onJumpToAllPlans={() => {
+            setTraceabilityTankId(null);
+            setTimeout(() => onJumpToAllPlans?.(), 50);
+          }}
         />
       )}
     </section>

@@ -489,7 +489,7 @@ label {
   background: rgba(15, 23, 42, 0.55);
   display: grid;
   place-items: center;
-  z-index: 50;
+  z-index: 70;
   padding: 20px;
   animation: fadeIn 0.18s ease;
 }
