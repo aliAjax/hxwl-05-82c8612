@@ -318,6 +318,7 @@ function App() {
 
   const [waterChangePlans, setWaterChangePlans] = useState<WaterChangePlan[]>([]);
   const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [planFormData, setPlanFormData] = useState<Omit<WaterChangePlan, "id" | "createdAt">>(emptyPlanForm);
   const [planFilter, setPlanFilter] = useState<string>("全部");
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -610,12 +611,27 @@ function App() {
   };
 
   const openAddPlanModal = () => {
+    setEditingPlanId(null);
     setPlanFormData({ ...emptyPlanForm });
+    setPlanModalOpen(true);
+  };
+
+  const openEditPlanModal = (plan: WaterChangePlan) => {
+    setEditingPlanId(plan.id);
+    setPlanFormData({
+      tankName: plan.tankName,
+      tankId: plan.tankId || "",
+      cycleDays: plan.cycleDays,
+      waterRatio: plan.waterRatio,
+      nextDate: plan.nextDate,
+      note: plan.note,
+    });
     setPlanModalOpen(true);
   };
 
   const closePlanModal = () => {
     setPlanModalOpen(false);
+    setEditingPlanId(null);
     setPlanFormData({ ...emptyPlanForm });
   };
 
@@ -625,6 +641,27 @@ function App() {
 
   const handlePlanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (editingPlanId) {
+      const existingPlan = waterChangePlans.find((p) => p.id === editingPlanId);
+      if (!existingPlan) return;
+      if (!planFormData.nextDate) {
+        alert("请选择下次维护日期");
+        return;
+      }
+      const updatedPlan: WaterChangePlan = {
+        ...existingPlan,
+        cycleDays: planFormData.cycleDays,
+        waterRatio: planFormData.waterRatio,
+        nextDate: planFormData.nextDate,
+        note: planFormData.note,
+      };
+      await dataService.updateWaterChangePlan(updatedPlan);
+      setWaterChangePlans((prev) =>
+        prev.map((p) => (p.id === editingPlanId ? updatedPlan : p))
+      );
+      closePlanModal();
+      return;
+    }
     const tankName =
       (planFormData.tankId && tanks.find((t) => t.id === planFormData.tankId)?.name) ||
       planFormData.tankName.trim();
@@ -1132,12 +1169,20 @@ function App() {
                     </div>
                     <div className="plan-actions">
                       {status !== "completed" && (
-                        <button
-                          className="plan-action-btn plan-action-complete"
-                          onClick={() => handleCompletePlan(plan.id)}
-                        >
-                          ✓ 完成换水
-                        </button>
+                        <>
+                          <button
+                            className="plan-action-btn"
+                            onClick={() => openEditPlanModal(plan)}
+                          >
+                            编辑
+                          </button>
+                          <button
+                            className="plan-action-btn plan-action-complete"
+                            onClick={() => handleCompletePlan(plan.id)}
+                          >
+                            ✓ 完成换水
+                          </button>
+                        </>
                       )}
                       <button
                         className="plan-action-btn plan-action-delete"
@@ -1215,36 +1260,50 @@ function App() {
         <div className="modal-overlay" onClick={closePlanModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <header className="modal-header">
-              <h2>新增换水计划</h2>
+              <h2>{editingPlanId ? "编辑换水计划" : "新增换水计划"}</h2>
               <button className="modal-close" onClick={closePlanModal}>
                 ×
               </button>
             </header>
             <form onSubmit={handlePlanSubmit} className="modal-form">
               <div className="form-grid">
-                <label>
-                  <span>鱼缸</span>
-                  <select
-                    value={planFormData.tankId || ""}
-                    onChange={(e) => updatePlanForm("tankId", e.target.value)}
-                  >
-                    <option value="">— 选择已有鱼缸 —</option>
-                    {tanks.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>或自定义鱼缸名称</span>
-                  <input
-                    type="text"
-                    value={planFormData.tankName}
-                    onChange={(e) => updatePlanForm("tankName", e.target.value)}
-                    placeholder="例如：草缸A"
-                  />
-                </label>
+                {!editingPlanId && (
+                  <>
+                    <label>
+                      <span>鱼缸</span>
+                      <select
+                        value={planFormData.tankId || ""}
+                        onChange={(e) => updatePlanForm("tankId", e.target.value)}
+                      >
+                        <option value="">— 选择已有鱼缸 —</option>
+                        {tanks.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>或自定义鱼缸名称</span>
+                      <input
+                        type="text"
+                        value={planFormData.tankName}
+                        onChange={(e) => updatePlanForm("tankName", e.target.value)}
+                        placeholder="例如：草缸A"
+                      />
+                    </label>
+                  </>
+                )}
+                {editingPlanId && (
+                  <label className="form-full">
+                    <span>鱼缸</span>
+                    <input
+                      type="text"
+                      value={planFormData.tankName || (planFormData.tankId && tanks.find((t) => t.id === planFormData.tankId)?.name) || ""}
+                      disabled
+                    />
+                  </label>
+                )}
                 <label>
                   <span>换水周期（天）</span>
                   <input
@@ -1289,7 +1348,7 @@ function App() {
                   取消
                 </button>
                 <button type="submit" className="primary-action">
-                  确认新增
+                  {editingPlanId ? "保存修改" : "确认新增"}
                 </button>
               </footer>
             </form>
