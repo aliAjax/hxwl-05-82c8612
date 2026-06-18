@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   AlertItem,
   AlertSeverity,
@@ -27,6 +27,8 @@ interface AlertCenterProps {
     handler: string
   ) => void;
   pendingCount: number;
+  targetAlertId?: string | null;
+  onTargetAlertHandled?: () => void;
 }
 
 const SEVERITY_LABELS: Record<AlertSeverity, string> = {
@@ -43,12 +45,19 @@ type AlertFilter = "全部" | "严重异常" | "轻微关注" | "已处理";
 
 const ALERT_FILTER_OPTIONS: AlertFilter[] = ["全部", "严重异常", "轻微关注", "已处理"];
 
-function AlertCenter({ alerts, onProcessAlert, pendingCount }: AlertCenterProps) {
+function AlertCenter({ alerts, onProcessAlert, pendingCount, targetAlertId, onTargetAlertHandled }: AlertCenterProps) {
   const [filter, setFilter] = useState<AlertFilter>("全部");
   const [processingAlertId, setProcessingAlertId] = useState<string | null>(null);
   const [treatment, setTreatment] = useState<TreatmentAction>("换水");
   const [treatmentNote, setTreatmentNote] = useState("");
   const [handler, setHandler] = useState("");
+
+  useEffect(() => {
+    if (targetAlertId) {
+      openProcessModal(targetAlertId);
+      if (onTargetAlertHandled) onTargetAlertHandled();
+    }
+  }, [targetAlertId]);
 
   const filteredAlerts = useMemo(() => {
     let result = [...alerts];

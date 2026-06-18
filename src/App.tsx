@@ -350,6 +350,8 @@ function App() {
   const [planFormData, setPlanFormData] = useState<Omit<WaterChangePlan, "id" | "createdAt">>(emptyPlanForm);
   const [planFilter, setPlanFilter] = useState<string>("全部");
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [targetAlertId, setTargetAlertId] = useState<string | null>(null);
+  const [targetPlanId, setTargetPlanId] = useState<string | null>(null);
 
   const planFilterOptions = ["全部", "已逾期", "即将到期", "正常", "已完成"];
 
@@ -410,6 +412,38 @@ function App() {
     };
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (targetPlanId) {
+      const plan = waterChangePlans.find((p) => p.id === targetPlanId);
+      if (plan) {
+        openEditPlanModal(plan);
+      }
+      const el = document.querySelector(".water-change-plans");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setTargetPlanId(null);
+    }
+  }, [targetPlanId, waterChangePlans]);
+
+  const handleJumpToAlert = (alertId: string) => {
+    setTargetAlertId(alertId);
+    const el = document.querySelector(".alert-center");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleJumpToWaterChangePlan = (planId: string) => {
+    setTargetPlanId(planId);
+  };
+
+  const handleJumpToAllAlerts = () => {
+    const el = document.querySelector(".alert-center");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleJumpToAllPlans = () => {
+    const el = document.querySelector(".water-change-plans");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const openAddModal = () => {
     setEditingId(null);
@@ -1009,6 +1043,8 @@ function App() {
         alerts={alerts}
         onProcessAlert={handleProcessAlert}
         pendingCount={pendingAlertCount}
+        targetAlertId={targetAlertId}
+        onTargetAlertHandled={() => setTargetAlertId(null)}
       />
 
       <WaterTrendAnalysis dataSource={trendDataSource} />
@@ -1020,6 +1056,10 @@ function App() {
         waterChangePlans={waterChangePlans}
         alerts={alerts}
         tankTypes={TANK_TYPES}
+        onJumpToAlert={handleJumpToAlert}
+        onJumpToWaterChangePlan={handleJumpToWaterChangePlan}
+        onJumpToAllAlerts={handleJumpToAllAlerts}
+        onJumpToAllPlans={handleJumpToAllPlans}
       />
 
       <section className="tank-profiles panel">

@@ -494,6 +494,127 @@ function generateSummary(factors: RiskFactor[], riskLevel: RiskLevel): string {
   }`;
 }
 
+function generateLowRiskReasons(
+  context: TankRiskContext,
+  sortedRecords: WaterRecord[]
+): string[] {
+  const reasons: string[] = [];
+  const { tank, plans, alerts } = context;
+  const latestRecord = sortedRecords[sortedRecords.length - 1];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (latestRecord) {
+    let allMetricsOk = true;
+    const checkedMetrics: string[] = [];
+    for (const metric of ALERT_METRIC_KEYS) {
+      const raw = latestRecord.metrics[metric];
+      if (raw && raw.trim()) {
+        const evalResult = evaluateMetricValue(
+          tank.tankType as TankType | string,
+          metric,
+          raw
+        );
+        if (evalResult && evalResult.status !== "ok") {
+          allMetricsOk = false;
+          break;
+        }
+        checkedMetrics.push(METRIC_LABELS[metric]);
+      }
+    }
+    if (allMetricsOk && checkedMetrics.length > 0) {
+      reasons.push(`${checkedMetrics.join("、")}指标均在安全范围内`);
+    }
+  }
+
+  let lastWaterChangeDate: Date | null = null;
+  for (let i = sortedRecords.length - 1; i >= 0; i--) {
+    const rec = sortedRecords[i];
+    if (rec.metrics.waterChange && rec.metrics.waterChange.trim()) {
+      lastWaterChangeDate = new Date(rec.recordedAt);
+      break;
+    }
+  }
+  if (lastWaterChangeDate) {
+    lastWaterChangeDate.setHours(0, 0, 0, 0);
+    const daysSinceChange = Math.floor(
+      (today.getTime() - lastWaterChangeDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    if (daysSinceChange <= 7) {
+      reasons.push(`最近${daysSinceChange === 0 ? "今天" : daysSinceChange + "天内"}刚换过水`);
+    } else if (daysSinceChange <= 14) {
+      reasons.push(`上次换水在${daysSinceChange}天前，周期正常`);
+    }
+  }
+
+  const overduePlans = plans.filter((p) => {
+    if (p.completedAt) return false;
+    const next = new Date(p.nextDate);
+    next.setHours(0, 0, 0, 0);
+    return next.getTime() < today.getTime();
+  });
+  if (overduePlans.length === 0) {
+    const upcomingPlans = plans.filter((p) => {
+      if (p.completedAt) return false;
+      const next = new Date(p.nextDate);
+      next.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil(
+        (next.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      return diffDays >= 0 && diffDays <= 7;
+    });
+    if (plans.length > 0) {
+      reasons.push(
+        upcomingPlans.length > 0
+          ? `换水计划正常，近7天内有${upcomingPlans.length}次计划`
+          : "无逾期换水计划"
+      );
+    }
+  }
+
+  const pendingAlerts = alerts.filter((a) => a.status === "pending");
+  if (pendingAlerts.length === 0) {
+    reasons.push("暂无待处理的异常提醒");
+  }
+
+  if (sortedRecords.length >= 2) {
+    const recentRecords = sortedRecords.slice(-5);
+    let hasStableTrend = true;
+    for (const metric of ALERT_METRIC_KEYS) {
+      const values: number[] = [];
+      for (const rec of recentRecords) {
+        const v = getMetricValue(rec, metric);
+        if (v !== null) values.push(v);
+      }
+      if (values.length >= 3) {
+        const hasRise = detectContinuousRise(
+          sortedRecords,
+          metric,
+          tank.tankType as TankType | string
+        );
+        const hasFluct = detectRapidFluctuation(
+          sortedRecords,
+          metric,
+          tank.tankType as TankType | string
+        );
+        if (hasRise || hasFluct) {
+          hasStableTrend = false;
+          break;
+        }
+      }
+    }
+    if (hasStableTrend && sortedRecords.length >= 3) {
+      reasons.push("近期水质趋势平稳，无持续上升或剧烈波动");
+    }
+  }
+
+  if (reasons.length === 0) {
+    reasons.push("当前未检测到异常风险因素");
+  }
+
+  return reasons.slice(0, 5);
+}
+
 function describeFactorType(type: RiskFactorType): string {
   switch (type) {
     case "single_threshold":
@@ -556,6 +677,8 @@ export function assessTankRisk(context: TankRiskContext): RiskAssessmentResult {
   const recordStatus = mapRiskToRecordStatus(riskLevel);
   const summary = generateSummary(allFactors, riskLevel);
   const recommendations = generateRecommendations(allFactors, tank);
+  const lowRiskReasons =
+    riskLevel === "低风险" ? generateLowRiskReasons(context, sortedRecords) : undefined;
 
   return {
     riskLevel,
@@ -564,6 +687,7 @@ export function assessTankRisk(context: TankRiskContext): RiskAssessmentResult {
     factors: allFactors,
     summary,
     recommendations,
+    lowRiskReasons,
   };
 }
 

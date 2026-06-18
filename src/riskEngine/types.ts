@@ -29,6 +29,7 @@ export interface RiskAssessmentResult {
   factors: RiskFactor[];
   summary: string;
   recommendations: string[];
+  lowRiskReasons?: string[];
 }
 
 export interface TankRiskContext {

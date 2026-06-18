@@ -9,6 +9,7 @@ import type {
 } from "../db/types";
 import type { TankDashboardInfo, CustomerDashboardInfo, RiskFilter, ViewMode } from "./types";
 import { TankDetailPanel } from "./TankDetailPanel";
+import { RiskTraceabilityView } from "./RiskTraceabilityView";
 import { assessTankRisk, getRiskLevelColor, type RiskLevel } from "../riskEngine";
 import "../styles.css";
 
@@ -19,6 +20,10 @@ interface DashboardProps {
   waterChangePlans: WaterChangePlan[];
   alerts: AlertItem[];
   tankTypes: string[];
+  onJumpToAlert?: (alertId: string) => void;
+  onJumpToWaterChangePlan?: (planId: string) => void;
+  onJumpToAllAlerts?: () => void;
+  onJumpToAllPlans?: () => void;
 }
 
 const aggregateRisk = (risks: RecordStatus[]): RecordStatus => {
@@ -99,6 +104,10 @@ export function Dashboard({
   waterChangePlans,
   alerts,
   tankTypes,
+  onJumpToAlert,
+  onJumpToWaterChangePlan,
+  onJumpToAllAlerts,
+  onJumpToAllPlans,
 }: DashboardProps) {
   const [customerFilter, setCustomerFilter] = useState<string>("全部");
   const [maintainerFilter, setMaintainerFilter] = useState<string>("全部");
@@ -106,6 +115,7 @@ export function Dashboard({
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("全部");
   const [viewMode, setViewMode] = useState<ViewMode>("byCustomer");
   const [selectedTankId, setSelectedTankId] = useState<string | null>(null);
+  const [traceabilityTankId, setTraceabilityTankId] = useState<string | null>(null);
 
   const maintainerOptions = useMemo(() => {
     const set = new Set<string>();
@@ -280,14 +290,20 @@ export function Dashboard({
           </div>
           <div className="dashboard-risk-indicator">
             <span
-              className="record-status"
+              className="record-status risk-tag-clickable"
               style={{
                 backgroundColor: getRiskLevelColor(risk.riskLevel),
                 color: "#fff",
                 border: "none",
+                cursor: "pointer",
               }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setTraceabilityTankId(info.tank.id);
+              }}
+              title="点击查看风险溯源"
             >
-              {risk.riskLevel}
+              {risk.riskLevel} 🔍
             </span>
             {info.pendingAlerts > 0 && (
               <span className="dashboard-alert-badge">
@@ -568,6 +584,44 @@ export function Dashboard({
           info={selectedTankInfo}
           records={selectedTankRecords}
           onClose={() => setSelectedTankId(null)}
+        />
+      )}
+
+      {traceabilityTankId && tankInfoMap.get(traceabilityTankId) && (
+        <RiskTraceabilityView
+          info={tankInfoMap.get(traceabilityTankId)!}
+          records={waterRecords
+            .filter(
+              (r) =>
+                r.tankId === traceabilityTankId ||
+                r.tankName === tankInfoMap.get(traceabilityTankId)?.tank.name
+            )
+            .sort(
+              (a, b) =>
+                new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()
+            )}
+          overduePlans={waterChangePlans.filter((p) => {
+            const match =
+              p.tankId === traceabilityTankId ||
+              p.tankName === tankInfoMap.get(traceabilityTankId)?.tank.name;
+            if (!match || p.completedAt) return false;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const nextDate = new Date(p.nextDate);
+            nextDate.setHours(0, 0, 0, 0);
+            return nextDate.getTime() < today.getTime();
+          })}
+          pendingAlerts={alerts.filter(
+            (a) =>
+              (a.tankId === traceabilityTankId ||
+                a.tankName === tankInfoMap.get(traceabilityTankId)?.tank.name) &&
+              a.status === "pending"
+          )}
+          onClose={() => setTraceabilityTankId(null)}
+          onJumpToAlert={onJumpToAlert}
+          onJumpToWaterChangePlan={onJumpToWaterChangePlan}
+          onJumpToAllAlerts={onJumpToAllAlerts}
+          onJumpToAllPlans={onJumpToAllPlans}
         />
       )}
     </section>
