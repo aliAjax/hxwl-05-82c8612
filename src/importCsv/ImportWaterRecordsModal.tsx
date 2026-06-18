@@ -1,16 +1,23 @@
-import { useState, useMemo, useCallback, Fragment } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import {
   parseWaterRecordsCsv,
   FIELD_LABELS,
   MISSING_DESCRIPTION,
   MISSING_CATEGORY,
   CATEGORY_LABEL,
-  getMissingFieldSummary,
   SAMPLE_CSV,
+  convertToEditableRows,
+  buildEditableParseResult,
+  validateAndUpdateRow,
+  cleanNumeric,
+  parseDateTime,
 } from "./csvParser";
-import type { MissingFieldSummary } from "./csvParser";
-import type { ParseResult, ValidRow, ErrorRow, PreparedRecord } from "./types";
+import type { EditableRow, EditableParseResult, PreparedRecord } from "./types";
 import type { TankProfile, RecordStatus, WaterMetrics } from "../db/types";
+import { generateAlertsFromRecord } from "../alertCenter/AlertCenter";
+import type { AlertItem, AlertMetricValues } from "../alertCenter/types";
+import { getEffectiveThresholds } from "../db/tankTemplates";
+import { TEMPLATE_METRIC_UNITS, TEMPLATE_METRIC_LABELS } from "../db/tankTemplates";
 
 const METRIC_RANGES: Record<
   keyof Omit<WaterMetrics, "waterChange">,
@@ -24,19 +31,34 @@ const METRIC_RANGES: Record<
   temperature: { ok: [24, 28], watch: [20, 32], unit: "°C", label: "温度" },
 };
 
+const CUSTOMIZABLE_METRICS = ["ph", "nitrate", "hardness", "temperature"] as const;
+
 function evaluateMetric(
   key: keyof Omit<WaterMetrics, "waterChange">,
-  raw: string
+  raw: string,
+  tank?: TankProfile
 ): RecordStatus {
   const value = parseFloat(raw);
   if (isNaN(value)) return "稳定";
-  const range = METRIC_RANGES[key];
+  
+  let range = METRIC_RANGES[key];
+  if (tank && CUSTOMIZABLE_METRICS.includes(key as typeof CUSTOMIZABLE_METRICS[number])) {
+    const eff = getEffectiveThresholds(tank, key as typeof CUSTOMIZABLE_METRICS[number]);
+    const unit = TEMPLATE_METRIC_UNITS[key as typeof CUSTOMIZABLE_METRICS[number]];
+    const label = TEMPLATE_METRIC_LABELS[key as typeof CUSTOMIZABLE_METRICS[number]];
+    range = { ok: eff.ok, watch: eff.watch, unit, label };
+  }
+  
   if (value < range.watch[0] || value > range.watch[1]) return "异常";
   if (value < range.ok[0] || value > range.ok[1]) return "关注";
   return "稳定";
 }
 
-function evaluateRecordStatus(metrics: WaterMetrics, remark: string): { status: RecordStatus; note: string } {
+function evaluateRecordStatus(
+  metrics: WaterMetrics,
+  remark: string,
+  tank?: TankProfile
+): { status: RecordStatus; note: string } {
   const metricKeys = Object.keys(METRIC_RANGES) as (keyof Omit<WaterMetrics, "waterChange">)[];
   const issues: { key: keyof Omit<WaterMetrics, "waterChange">; status: RecordStatus }[] = [];
   let overall: RecordStatus = "稳定";
@@ -44,7 +66,7 @@ function evaluateRecordStatus(metrics: WaterMetrics, remark: string): { status: 
   for (const key of metricKeys) {
     const raw = metrics[key];
     if (!raw.trim()) continue;
-    const st = evaluateMetric(key, raw);
+    const st = evaluateMetric(key, raw, tank);
     if (st !== "稳定") {
       issues.push({ key, status: st });
     }
@@ -94,10 +116,14 @@ export interface ImportWaterRecordsModalProps {
   open: boolean;
   onClose: () => void;
   tanks: TankProfile[];
-  onImport: (records: PreparedRecord[]) => Promise<void>;
+  onImport: (records: PreparedRecord[], alerts: Omit<AlertItem, "id">[]) => Promise<void>;
 }
 
-type PreviewTab = "valid" | "error";
+type PreviewFilter = "all" | "valid" | "error" | "unmatched";
+
+const METRIC_KEYS = ["ph", "ammonia", "nitrite", "nitrate", "hardness", "temperature"] as const;
+const METRIC_LABELS = ["pH", "氨氮", "亚硝", "硝", "硬度", "温度"];
+const METRIC_STEPS = ["0.1", "0.01", "0.01", "1", "1", "0.5"];
 
 export function ImportWaterRecordsModal({
   open,
@@ -106,20 +132,33 @@ export function ImportWaterRecordsModal({
   onImport,
 }: ImportWaterRecordsModalProps) {
   const [csvText, setCsvText] = useState("");
-  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
-  const [activeTab, setActiveTab] = useState<PreviewTab>("valid");
+  const [editableResult, setEditableResult] = useState<EditableParseResult | null>(null);
+  const [activeFilter, setActiveFilter] = useState<PreviewFilter>("all");
   const [isImporting, setIsImporting] = useState(false);
-  const [showMissingWarning, setShowMissingWarning] = useState(false);
+  const [editingCell, setEditingCell] = useState<{ rowId: string; field: string } | null>(null);
+  const [showMatchTankModal, setShowMatchTankModal] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setCsvText("");
+      setEditableResult(null);
+      setActiveFilter("all");
+      setEditingCell(null);
+      setShowMatchTankModal(null);
+    }
+  }, [open]);
 
   const handleParse = useCallback(() => {
     if (!csvText.trim()) {
-      setParseResult(null);
+      setEditableResult(null);
       return;
     }
     const result = parseWaterRecordsCsv(csvText);
-    setParseResult(result);
-    setActiveTab(result.validRows.length > 0 ? "valid" : "error");
-  }, [csvText]);
+    const editableRows = convertToEditableRows(result, tanks);
+    const editableParseResult = buildEditableParseResult(editableRows);
+    setEditableResult(editableParseResult);
+    setActiveFilter("all");
+  }, [csvText, tanks]);
 
   const handleLoadSample = () => {
     setCsvText(SAMPLE_CSV);
@@ -127,76 +166,201 @@ export function ImportWaterRecordsModal({
 
   const handleClear = () => {
     setCsvText("");
-    setParseResult(null);
+    setEditableResult(null);
+    setEditingCell(null);
+    setShowMatchTankModal(null);
   };
 
-  const prepareRecords = useCallback((): PreparedRecord[] => {
-    if (!parseResult) return [];
-    return parseResult.validRows.map((row: ValidRow) => {
-      const existingTank = tanks.find((t) => t.name === row.data.tankName);
-      const { status, note } = evaluateRecordStatus(row.data.metrics, row.data.remark);
-      return {
-        tankName: row.data.tankName,
-        tankId: existingTank?.id,
-        recordedAt: row.data.recordedAt,
-        metrics: { ...row.data.metrics },
+  const updateRowField = useCallback(
+    (rowId: string, field: string, value: string) => {
+      if (!editableResult) return;
+
+      const updatedRows = editableResult.rows.map((row) => {
+        if (row.id !== rowId) return row;
+
+        let updatedRow = { ...row };
+
+        if (field === "tankName") {
+          updatedRow.tankName = value;
+        } else if (field === "recordedAt") {
+          const parsedDate = parseDateTime(value);
+          updatedRow.recordedAt = parsedDate || value;
+        } else if (field === "remark") {
+          updatedRow.remark = value;
+        } else if (field === "waterChange") {
+          updatedRow.metrics = { ...updatedRow.metrics, waterChange: value };
+        } else if (METRIC_KEYS.includes(field as typeof METRIC_KEYS[number])) {
+          const cleaned = cleanNumeric(value);
+          updatedRow.metrics = {
+            ...updatedRow.metrics,
+            [field]: cleaned,
+          } as WaterMetrics;
+        }
+
+        return validateAndUpdateRow(updatedRow, tanks);
+      });
+
+      setEditableResult(buildEditableParseResult(updatedRows));
+    },
+    [editableResult, tanks]
+  );
+
+  const handleMatchTank = useCallback(
+    (rowId: string, tankId: string | null) => {
+      if (!editableResult) return;
+
+      const updatedRows = editableResult.rows.map((row) => {
+        if (row.id !== rowId) return row;
+
+        let updatedRow = { ...row };
+
+        if (tankId) {
+          const matchedTank = tanks.find((t) => t.id === tankId);
+          updatedRow.matchedTankId = tankId;
+          updatedRow.tankMatchStatus = "manual";
+          if (matchedTank && !row.tankName.trim()) {
+            updatedRow.tankName = matchedTank.name;
+          }
+        } else {
+          updatedRow.matchedTankId = undefined;
+          const validated = validateAndUpdateRow(row, tanks);
+          updatedRow.tankMatchStatus = validated.tankMatchStatus;
+        }
+
+        return validateAndUpdateRow(updatedRow, tanks);
+      });
+
+      setEditableResult(buildEditableParseResult(updatedRows));
+      setShowMatchTankModal(null);
+    },
+    [editableResult, tanks]
+  );
+
+  const handleResetRow = useCallback(
+    (rowId: string) => {
+      if (!editableResult) return;
+
+      const updatedRows = editableResult.rows.map((row) => {
+        if (row.id !== rowId) return row;
+
+        const resetRow: EditableRow = {
+          ...row,
+          tankName: row.originalTankName,
+          recordedAt: row.originalRecordedAt,
+          metrics: { ...row.originalMetrics },
+          isModified: false,
+        };
+
+        return validateAndUpdateRow(resetRow, tanks);
+      });
+
+      setEditableResult(buildEditableParseResult(updatedRows));
+    },
+    [editableResult, tanks]
+  );
+
+  const handleDeleteRow = useCallback(
+    (rowId: string) => {
+      if (!editableResult) return;
+
+      if (!window.confirm("确定删除该行吗？")) return;
+
+      const updatedRows = editableResult.rows.filter((row) => row.id !== rowId);
+      setEditableResult(buildEditableParseResult(updatedRows));
+    },
+    [editableResult]
+  );
+
+  const filteredRows = useMemo(() => {
+    if (!editableResult) return [];
+
+    switch (activeFilter) {
+      case "valid":
+        return editableResult.rows.filter((r) => !r.isError);
+      case "error":
+        return editableResult.rows.filter((r) => r.isError);
+      case "unmatched":
+        return editableResult.rows.filter(
+          (r) => r.tankMatchStatus === "unmatched" && r.tankName.trim() !== ""
+        );
+      default:
+        return editableResult.rows;
+    }
+  }, [editableResult, activeFilter]);
+
+  const prepareRecords = useCallback((): { records: PreparedRecord[]; alerts: Omit<AlertItem, "id">[] } => {
+    if (!editableResult) return { records: [], alerts: [] };
+
+    const validRows = editableResult.rows.filter((r) => !r.isError && r.tankName.trim());
+    const records: PreparedRecord[] = [];
+    const alerts: Omit<AlertItem, "id">[] = [];
+
+    for (const row of validRows) {
+      const tank = row.matchedTankId
+        ? tanks.find((t) => t.id === row.matchedTankId)
+        : tanks.find((t) => t.name === row.tankName);
+
+      const { status, note } = evaluateRecordStatus(row.metrics, row.remark, tank);
+
+      const tankName = tank?.name || row.tankName;
+      const tankId = tank?.id;
+
+      records.push({
+        tankName,
+        tankId,
+        recordedAt: row.recordedAt,
+        metrics: { ...row.metrics },
         status,
         note,
-      };
-    });
-  }, [parseResult, tanks]);
+      });
+
+      const tankType = tank?.tankType || "草缸";
+      const customThresholds = tank?.customThresholds;
+      const recordAlerts = generateAlertsFromRecord(
+        "",
+        tankName,
+        tankId,
+        tankType,
+        row.metrics as unknown as AlertMetricValues,
+        row.recordedAt,
+        customThresholds
+      );
+      alerts.push(...recordAlerts.map((a) => ({ ...a, id: undefined! } as Omit<AlertItem, "id">)));
+    }
+
+    return { records, alerts };
+  }, [editableResult, tanks]);
 
   const handleImport = async () => {
-    if (!parseResult || parseResult.validRows.length === 0) return;
-    
-    const allMissingFields = parseResult.errorRows.flatMap((r) => r.missingFields);
-    if (allMissingFields.length > 0 && !showMissingWarning) {
-      setShowMissingWarning(true);
+    if (!editableResult) return;
+
+    const validRows = editableResult.rows.filter((r) => !r.isError && r.tankName.trim());
+    if (validRows.length === 0) {
+      alert("没有可导入的有效记录，请先修正错误行。");
       return;
     }
-    
+
+    const errorRows = editableResult.rows.filter((r) => r.isError);
+    if (errorRows.length > 0) {
+      if (
+        !window.confirm(
+          `有 ${errorRows.length} 行存在错误，将不会被导入。确认导入 ${validRows.length} 条有效记录？`
+        )
+      ) {
+        return;
+      }
+    }
+
     setIsImporting(true);
     try {
-      const records = prepareRecords();
-      await onImport(records);
-      setCsvText("");
-      setParseResult(null);
-      setShowMissingWarning(false);
+      const { records, alerts } = prepareRecords();
+      await onImport(records, alerts);
+      handleClear();
       onClose();
     } finally {
       setIsImporting(false);
     }
   };
-
-  const totalMissingFields = useMemo(() => {
-    if (!parseResult) return 0;
-    const errorMissing = parseResult.errorRows.reduce(
-      (sum, r) => sum + r.missingFields.length,
-      0
-    );
-    const validMissing = parseResult.validRows.reduce(
-      (sum, r) => sum + r.missingFields.length,
-      0
-    );
-    return errorMissing + validMissing;
-  }, [parseResult]);
-
-  const missingFieldSummary = useMemo((): MissingFieldSummary[] => {
-    if (!parseResult) return [];
-    return getMissingFieldSummary(parseResult);
-  }, [parseResult]);
-
-  const autoFillCount = useMemo(() => {
-    return missingFieldSummary
-      .filter((s) => s.category === "autoFill")
-      .reduce((sum, s) => sum + s.count, 0);
-  }, [missingFieldSummary]);
-
-  const emptyMetricCount = useMemo(() => {
-    return missingFieldSummary
-      .filter((s) => s.category === "empty")
-      .reduce((sum, s) => sum + s.count, 0);
-  }, [missingFieldSummary]);
 
   const getMissingCategoryClass = (category: string): string => {
     switch (category) {
@@ -224,16 +388,63 @@ export function ImportWaterRecordsModal({
     }
   };
 
+  const getTankMatchStatusClass = (status: string) => {
+    switch (status) {
+      case "matched":
+        return "tank-match-matched";
+      case "manual":
+        return "tank-match-manual";
+      case "unmatched":
+        return "tank-match-unmatched";
+      case "new":
+        return "tank-match-new";
+      default:
+        return "";
+    }
+  };
+
+  const getTankMatchStatusText = (status: string) => {
+    switch (status) {
+      case "matched":
+        return "已匹配";
+      case "manual":
+        return "手动关联";
+      case "unmatched":
+        return "未匹配";
+      case "new":
+        return "新建";
+      default:
+        return "";
+    }
+  };
+
+  const handleCellEdit = (rowId: string, field: string) => {
+    setEditingCell({ rowId, field });
+  };
+
+  const handleCellBlur = () => {
+    setEditingCell(null);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, rowId: string, field: string, value: string) => {
+    if (e.key === "Enter") {
+      updateRowField(rowId, field, value);
+      setEditingCell(null);
+    } else if (e.key === "Escape") {
+      setEditingCell(null);
+    }
+  };
+
   if (!open) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="modal-content import-modal-content"
+        className="modal-content import-modal-content import-modal-large"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="modal-header">
-          <h2>导入水质检测记录</h2>
+          <h2>导入水质检测记录 - 校对模式</h2>
           <button className="modal-close" onClick={onClose}>
             ×
           </button>
@@ -257,7 +468,7 @@ export function ImportWaterRecordsModal({
                   type="button"
                   className="secondary-action"
                   onClick={handleClear}
-                  disabled={!csvText}
+                  disabled={!csvText && !editableResult}
                 >
                   清空
                 </button>
@@ -281,284 +492,316 @@ export function ImportWaterRecordsModal({
 示例：
 草缸A,2026-06-15 09:30,6.8,0,0,18,8,26,正常
 海缸B,2026-06-15 10:00,8.1,0.02,0.01,5,12,27,钙硬度偏低`}
-              rows={8}
+              rows={5}
               spellCheck={false}
             />
             <div className="import-hint">
               <p>
                 <strong>提示：</strong>
-                第一行为表头（可选），支持中英文字段名；日期格式支持
-                YYYY-MM-DD、YYYY-MM-DD HH:mm 等；留空字段（除鱼缸名称外）将使用默认值。
+                解析后可直接在表格中编辑修正数据，未匹配的鱼缸可手动关联到已有鱼缸。
+                错误行（红色背景）需要修正后才能导入。
               </p>
             </div>
           </div>
 
-          {parseResult && (
+          {editableResult && (
             <div className="import-preview-section">
               <div className="import-summary-bar">
                 <div className="import-summary-item import-summary-total">
                   <span className="summary-label">总行数</span>
-                  <span className="summary-value">{parseResult.totalRows}</span>
+                  <span className="summary-value">{editableResult.totalRows}</span>
                 </div>
                 <div className="import-summary-item import-summary-valid">
-                  <span className="summary-label">有效行</span>
-                  <span className="summary-value">{parseResult.validRows.length}</span>
+                  <span className="summary-label">可导入</span>
+                  <span className="summary-value">{editableResult.validCount}</span>
                 </div>
                 <div className="import-summary-item import-summary-error">
                   <span className="summary-label">错误行</span>
-                  <span className="summary-value">{parseResult.errorRows.length}</span>
+                  <span className="summary-value">{editableResult.errorCount}</span>
                 </div>
-                {totalMissingFields > 0 && (
+                {editableResult.unmatchedTankCount > 0 && (
                   <div className="import-summary-item import-summary-missing">
-                    <span className="summary-label">字段缺失</span>
-                    <span className="summary-value">{totalMissingFields}</span>
+                    <span className="summary-label">未匹配鱼缸</span>
+                    <span className="summary-value">{editableResult.unmatchedTankCount}</span>
                   </div>
                 )}
               </div>
 
-              {missingFieldSummary.length > 0 && (
-                <div className="missing-summary-bar">
-                  <div className="missing-summary-title">
-                    <span className="missing-summary-icon">ℹ️</span>
-                    <span>字段缺失说明</span>
-                  </div>
-                  <div className="missing-summary-list">
-                    {missingFieldSummary.map((item) => (
-                      <div
-                        key={item.field}
-                        className={`missing-summary-item ${getMissingCategoryClass(item.category)}`}
-                        title={item.description}
-                      >
-                        <span className="missing-item-label">{item.label}</span>
-                        <span className="missing-item-count">×{item.count}</span>
-                        <span className="missing-item-badge">
-                          {CATEGORY_LABEL[item.category] || item.category}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="missing-summary-desc">
-                    {autoFillCount > 0 && (
-                      <span className="missing-desc-item">
-                        <strong>自动填充：</strong>系统自动补充默认值，可正常导入
-                      </span>
-                    )}
-                    {emptyMetricCount > 0 && (
-                      <span className="missing-desc-item">
-                        <strong>无数据：</strong>该指标留空，不参与状态评估
-                      </span>
-                    )}
-                    {missingFieldSummary.some((s) => s.category === "required") && (
-                      <span className="missing-desc-item missing-desc-error">
-                        <strong>必填缺失：</strong>必须填写，对应行无法导入
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="preview-tabs">
+              <div className="preview-filter-tabs">
                 <button
-                  className={`preview-tab ${activeTab === "valid" ? "preview-tab-active" : ""}`}
-                  onClick={() => setActiveTab("valid")}
+                  className={`preview-filter-tab ${activeFilter === "all" ? "tab-active" : ""}`}
+                  onClick={() => setActiveFilter("all")}
                 >
-                  有效行 ({parseResult.validRows.length})
+                  全部 ({editableResult.totalRows})
                 </button>
                 <button
-                  className={`preview-tab ${activeTab === "error" ? "preview-tab-active" : ""}`}
-                  onClick={() => setActiveTab("error")}
+                  className={`preview-filter-tab ${activeFilter === "valid" ? "tab-active" : ""}`}
+                  onClick={() => setActiveFilter("valid")}
                 >
-                  错误行 ({parseResult.errorRows.length})
-                  {parseResult.errorRows.length > 0 && (
-                    <span className="preview-tab-badge">{parseResult.errorRows.length}</span>
+                  可导入 ({editableResult.validCount})
+                </button>
+                <button
+                  className={`preview-filter-tab ${activeFilter === "error" ? "tab-active" : ""}`}
+                  onClick={() => setActiveFilter("error")}
+                >
+                  错误行 ({editableResult.errorCount})
+                  {editableResult.errorCount > 0 && (
+                    <span className="tab-badge">{editableResult.errorCount}</span>
+                  )}
+                </button>
+                <button
+                  className={`preview-filter-tab ${activeFilter === "unmatched" ? "tab-active" : ""}`}
+                  onClick={() => setActiveFilter("unmatched")}
+                >
+                  未匹配鱼缸 ({editableResult.unmatchedTankCount})
+                  {editableResult.unmatchedTankCount > 0 && (
+                    <span className="tab-badge tab-badge-warning">{editableResult.unmatchedTankCount}</span>
                   )}
                 </button>
               </div>
 
               <div className="preview-content">
-                {activeTab === "valid" ? (
-                  parseResult.validRows.length === 0 ? (
-                    <div className="preview-empty">
-                      <div className="preview-empty-icon">✓</div>
-                      <p>暂无有效行</p>
-                    </div>
-                  ) : (
-                    <div className="preview-table-wrapper">
-                      <table className="preview-table">
-                        <thead>
-                          <tr>
-                            <th>行号</th>
-                            <th>鱼缸名称</th>
-                            <th>检测时间</th>
-                            <th>pH</th>
-                            <th>氨氮</th>
-                            <th>亚硝</th>
-                            <th>硝</th>
-                            <th>硬度</th>
-                            <th>温度</th>
-                            <th>状态</th>
-                            <th>备注</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {parseResult.validRows.map((row: ValidRow) => {
-                            const { status, note } = evaluateRecordStatus(
-                              row.data.metrics,
-                              row.data.remark
-                            );
-                            return (
-                              <Fragment key={row.rowIndex}>
-                                <tr>
-                                  <td className="row-index">{row.rowIndex}</td>
-                                  <td className="cell-strong">{row.data.tankName}</td>
-                                  <td
-                                    className={
-                                      row.missingFields.includes("recordedAt")
-                                        ? "cell-muted cell-missing cell-missing-autofill"
-                                        : "cell-muted"
-                                    }
-                                    title={
-                                      row.missingFields.includes("recordedAt")
-                                        ? MISSING_DESCRIPTION["recordedAt"]
-                                        : ""
-                                    }
-                                  >
-                                    <span className="cell-value">{row.data.recordedAt}</span>
-                                    {row.missingFields.includes("recordedAt") && (
-                                      <span className="cell-autofill-badge">自动填充</span>
-                                    )}
-                                  </td>
-                                  <td
-                                    className={row.missingFields.includes("ph") ? "cell-missing cell-metric" : ""}
-                                    title={row.missingFields.includes("ph") ? MISSING_DESCRIPTION["ph"] : ""}
-                                  >
-                                    {row.data.metrics.ph || <span className="cell-empty">— 未测</span>}
-                                  </td>
-                                  <td
-                                    className={row.missingFields.includes("ammonia") ? "cell-missing cell-metric" : ""}
-                                    title={row.missingFields.includes("ammonia") ? MISSING_DESCRIPTION["ammonia"] : ""}
-                                  >
-                                    {row.data.metrics.ammonia || <span className="cell-empty">— 未测</span>}
-                                  </td>
-                                  <td
-                                    className={row.missingFields.includes("nitrite") ? "cell-missing cell-metric" : ""}
-                                    title={row.missingFields.includes("nitrite") ? MISSING_DESCRIPTION["nitrite"] : ""}
-                                  >
-                                    {row.data.metrics.nitrite || <span className="cell-empty">— 未测</span>}
-                                  </td>
-                                  <td
-                                    className={row.missingFields.includes("nitrate") ? "cell-missing cell-metric" : ""}
-                                    title={row.missingFields.includes("nitrate") ? MISSING_DESCRIPTION["nitrate"] : ""}
-                                  >
-                                    {row.data.metrics.nitrate || <span className="cell-empty">— 未测</span>}
-                                  </td>
-                                  <td
-                                    className={row.missingFields.includes("hardness") ? "cell-missing cell-metric" : ""}
-                                    title={row.missingFields.includes("hardness") ? MISSING_DESCRIPTION["hardness"] : ""}
-                                  >
-                                    {row.data.metrics.hardness || <span className="cell-empty">— 未测</span>}
-                                  </td>
-                                  <td
-                                    className={row.missingFields.includes("temperature") ? "cell-missing cell-metric" : ""}
-                                    title={row.missingFields.includes("temperature") ? MISSING_DESCRIPTION["temperature"] : ""}
-                                  >
-                                    {row.data.metrics.temperature || <span className="cell-empty">— 未测</span>}
-                                  </td>
-                                  <td>
-                                    <span className={`preview-status ${getStatusClass(status)}`}>
-                                      {status}
-                                    </span>
-                                  </td>
-                                  <td className="cell-note">{note}</td>
-                                </tr>
-                                {row.missingFields.filter((f) => f !== "tankName").length > 0 && (
-                                  <tr className="valid-row-missing">
-                                    <td colSpan={11}>
-                                      <div className="missing-tag-group">
-                                        {row.missingFields
-                                          .filter((f) => f !== "tankName")
-                                          .map((field) => {
-                                            const label = FIELD_LABELS[field] || field;
-                                            const category =
-                                              (MISSING_CATEGORY as Record<string, string>)[field] || "optional";
-                                            const description =
-                                              MISSING_DESCRIPTION[field] || "未填写";
-                                            return (
-                                              <span
-                                                key={field}
-                                                className={`missing-tag ${getMissingCategoryClass(category)}`}
-                                                title={description}
-                                              >
-                                                <span className="missing-tag-label">{label}</span>
-                                                <span className="missing-tag-desc">{description}</span>
-                                              </span>
-                                            );
-                                          })}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                              </Fragment>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )
-                ) : parseResult.errorRows.length === 0 ? (
-                  <div className="preview-empty preview-empty-ok">
-                    <div className="preview-empty-icon">✓</div>
-                    <p>无错误行</p>
+                {filteredRows.length === 0 ? (
+                  <div className="preview-empty">
+                    <div className="preview-empty-icon">📋</div>
+                    <p>当前筛选条件下无数据</p>
                   </div>
                 ) : (
-                  <div className="error-list">
-                    {parseResult.errorRows.map((row: ErrorRow) => (
-                      <div key={row.rowIndex} className="error-card">
-                        <div className="error-card-header">
-                          <span className="error-row-index">第 {row.rowIndex} 行</span>
-                          {row.missingFields.length > 0 && (
-                            <span className="error-missing-count">
-                              缺失 {row.missingFields.length} 个字段
-                            </span>
-                          )}
-                        </div>
-                        {row.missingFields.length > 0 && (
-                          <div className="error-missing-list">
-                            {row.missingFields.map((field) => {
-                              const label = FIELD_LABELS[field] || field;
-                              const category =
-                                (MISSING_CATEGORY as Record<string, string>)[field] || "optional";
-                              const description =
-                                MISSING_DESCRIPTION[field] || "未填写";
-                              return (
-                                <div
-                                  key={field}
-                                  className={`error-missing-item ${getMissingCategoryClass(category)}`}
-                                >
-                                  <span className="error-missing-name">
-                                    {label}
+                  <div className="preview-table-wrapper">
+                    <table className="preview-table editable-preview-table">
+                      <thead>
+                        <tr>
+                          <th>行号</th>
+                          <th>鱼缸名称</th>
+                          <th>鱼缸匹配</th>
+                          <th>检测时间</th>
+                          <th>pH</th>
+                          <th>氨氮</th>
+                          <th>亚硝</th>
+                          <th>硝</th>
+                          <th>硬度</th>
+                          <th>温度</th>
+                          <th>状态</th>
+                          <th>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredRows.map((row) => {
+                          const tank = row.matchedTankId
+                            ? tanks.find((t) => t.id === row.matchedTankId)
+                            : tanks.find((t) => t.name === row.tankName);
+                          const { status, note } = evaluateRecordStatus(
+                            row.metrics,
+                            row.remark,
+                            tank
+                          );
+
+                          return (
+                            <React.Fragment key={row.id}>
+                              <tr className={row.isError ? "row-error" : row.isModified ? "row-modified" : ""}>
+                                <td className="row-index">
+                                  {row.rowIndex}
+                                  {row.isModified && <span className="modified-badge">✏️</span>}
+                                </td>
+                                <td className="cell-editable" onClick={() => handleCellEdit(row.id, "tankName")}>
+                                  {editingCell?.rowId === row.id && editingCell?.field === "tankName" ? (
+                                    <input
+                                      type="text"
+                                      defaultValue={row.tankName}
+                                      autoFocus
+                                      onBlur={(e) => {
+                                        updateRowField(row.id, "tankName", e.target.value);
+                                        handleCellBlur();
+                                      }}
+                                      onKeyDown={(e) =>
+                                        handleKeyDown(e, row.id, "tankName", e.currentTarget.value)
+                                      }
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="cell-input"
+                                      placeholder="输入鱼缸名称"
+                                    />
+                                  ) : (
+                                    <span className={!row.tankName.trim() ? "cell-empty" : "cell-strong"}>
+                                      {row.tankName || "点击填写"}
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  <div className="tank-match-cell">
+                                    <span
+                                      className={`tank-match-badge ${getTankMatchStatusClass(row.tankMatchStatus)}`}
+                                    >
+                                      {getTankMatchStatusText(row.tankMatchStatus)}
+                                    </span>
+                                    {row.tankName.trim() && (
+                                      <button
+                                        type="button"
+                                        className="tank-match-btn"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setShowMatchTankModal(row.id);
+                                        }}
+                                      >
+                                        {row.matchedTankId ? "重新关联" : "关联鱼缸"}
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="cell-editable cell-muted" onClick={() => handleCellEdit(row.id, "recordedAt")}>
+                                  {editingCell?.rowId === row.id && editingCell?.field === "recordedAt" ? (
+                                    <input
+                                      type="text"
+                                      defaultValue={row.recordedAt}
+                                      autoFocus
+                                      onBlur={(e) => {
+                                        updateRowField(row.id, "recordedAt", e.target.value);
+                                        handleCellBlur();
+                                      }}
+                                      onKeyDown={(e) =>
+                                        handleKeyDown(e, row.id, "recordedAt", e.currentTarget.value)
+                                      }
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="cell-input"
+                                      placeholder="YYYY-MM-DD HH:mm"
+                                    />
+                                  ) : (
+                                    <span className={row.missingFields.includes("recordedAt") ? "cell-missing cell-missing-autofill" : ""}>
+                                      {row.recordedAt || "点击填写"}
+                                      {row.missingFields.includes("recordedAt") && (
+                                        <span className="cell-autofill-badge">自动填充</span>
+                                      )}
+                                    </span>
+                                  )}
+                                </td>
+                                {METRIC_KEYS.map((metric, idx) => (
+                                  <td
+                                    key={metric}
+                                    className={`cell-editable cell-metric ${
+                                      row.missingFields.includes(metric) ? "cell-missing" : ""
+                                    }`}
+                                    onClick={() => handleCellEdit(row.id, metric)}
+                                  >
+                                    {editingCell?.rowId === row.id && editingCell?.field === metric ? (
+                                      <input
+                                        type="number"
+                                        step={METRIC_STEPS[idx]}
+                                        defaultValue={row.metrics[metric]}
+                                        autoFocus
+                                        onBlur={(e) => {
+                                          updateRowField(row.id, metric, e.target.value);
+                                          handleCellBlur();
+                                        }}
+                                        onKeyDown={(e) =>
+                                          handleKeyDown(e, row.id, metric, e.currentTarget.value)
+                                        }
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="cell-input cell-input-numeric"
+                                        placeholder={METRIC_LABELS[idx]}
+                                      />
+                                    ) : (
+                                      <span>
+                                        {row.metrics[metric] || <span className="cell-empty">— 未测</span>}
+                                      </span>
+                                    )}
+                                  </td>
+                                ))}
+                                <td>
+                                  <span className={`preview-status ${getStatusClass(status)}`}>
+                                    {row.isError ? "错误" : status}
                                   </span>
-                                  <span className="error-missing-badge">
-                                    {CATEGORY_LABEL[category as keyof typeof CATEGORY_LABEL] || category}
-                                  </span>
-                                  <span className="error-missing-desc">
-                                    {description}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        <div className="error-raw-line">{row.rawLine}</div>
-                        {row.errors.length > 0 && (
-                          <ul className="error-details">
-                            {row.errors.map((err, idx) => (
-                              <li key={idx}>⚠️ {err}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
+                                </td>
+                                <td className="cell-actions">
+                                  <button
+                                    type="button"
+                                    className="row-action-btn"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleResetRow(row.id);
+                                    }}
+                                    title="重置为原始值"
+                                    disabled={!row.isModified}
+                                  >
+                                    ↺
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="row-action-btn row-action-delete"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteRow(row.id);
+                                    }}
+                                    title="删除该行"
+                                  >
+                                    ✕
+                                  </button>
+                                </td>
+                              </tr>
+                              {row.isError && row.errors.length > 0 && (
+                                <tr className="row-error-detail">
+                                  <td colSpan={12}>
+                                    <div className="error-tag-group">
+                                      {row.errors.map((err, idx) => (
+                                        <span key={idx} className="error-tag">
+                                          ⚠️ {err}
+                                        </span>
+                                      ))}
+                                      {row.missingFields
+                                        .filter((f) => f === "tankName")
+                                        .map((field) => {
+                                          const label = FIELD_LABELS[field] || field;
+                                          const category =
+                                            (MISSING_CATEGORY as Record<string, string>)[field] || "optional";
+                                          const description =
+                                            MISSING_DESCRIPTION[field] || "未填写";
+                                          return (
+                                            <span
+                                              key={field}
+                                              className={`missing-tag ${getMissingCategoryClass(category)}`}
+                                              title={description}
+                                            >
+                                              <span className="missing-tag-label">{label}</span>
+                                              <span className="missing-tag-desc">{description}</span>
+                                            </span>
+                                          );
+                                        })}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                              {!row.isError && row.remark && (
+                                <tr className="row-remark">
+                                  <td colSpan={12}>
+                                    <span className="remark-label">备注：</span>
+                                    <span onClick={() => handleCellEdit(row.id, "remark")} className="cell-editable">
+                                      {editingCell?.rowId === row.id && editingCell?.field === "remark" ? (
+                                        <input
+                                          type="text"
+                                          defaultValue={row.remark}
+                                          autoFocus
+                                          onBlur={(e) => {
+                                            updateRowField(row.id, "remark", e.target.value);
+                                            handleCellBlur();
+                                          }}
+                                          onKeyDown={(e) =>
+                                            handleKeyDown(e, row.id, "remark", e.currentTarget.value)
+                                          }
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="cell-input cell-input-wide"
+                                          placeholder="输入备注"
+                                        />
+                                      ) : (
+                                        <span>{row.remark}</span>
+                                      )}
+                                    </span>
+                                    <span className="remark-note">状态评估：{note}</span>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
@@ -567,19 +810,11 @@ export function ImportWaterRecordsModal({
         </div>
 
         <footer className="modal-footer import-modal-footer">
-          {showMissingWarning && parseResult && parseResult.errorRows.length > 0 && (
-            <div className="missing-warning-bar">
-              ⚠️ 有 {parseResult.errorRows.length} 行存在错误或字段缺失，
-              将仅导入 {parseResult.validRows.length} 条有效记录。确认继续？
-              <button
-                type="button"
-                className="secondary-action"
-                onClick={() => setShowMissingWarning(false)}
-              >
-                返回修改
-              </button>
-            </div>
-          )}
+          <div className="footer-legend">
+            <span className="legend-item legend-error">红底 = 错误行，需修正</span>
+            <span className="legend-item legend-modified">✏️ = 已修改</span>
+            <span className="legend-item legend-click">点击单元格可编辑</span>
+          </div>
           <div className="footer-actions">
             <button type="button" onClick={onClose} disabled={isImporting}>
               取消
@@ -588,15 +823,98 @@ export function ImportWaterRecordsModal({
               type="button"
               className="primary-action"
               onClick={handleImport}
-              disabled={!parseResult || parseResult.validRows.length === 0 || isImporting}
+              disabled={
+                !editableResult ||
+                editableResult.validCount === 0 ||
+                isImporting
+              }
             >
               {isImporting
                 ? "导入中..."
-                : `确认导入 (${parseResult?.validRows.length || 0})`}
+                : `确认导入 (${editableResult?.validCount || 0})`}
             </button>
           </div>
         </footer>
       </div>
+
+      {showMatchTankModal && (
+        <div className="modal-overlay" onClick={() => setShowMatchTankModal(null)}>
+          <div
+            className="modal-content match-tank-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="modal-header">
+              <h2>关联到已有鱼缸</h2>
+              <button className="modal-close" onClick={() => setShowMatchTankModal(null)}>
+                ×
+              </button>
+            </header>
+            <div className="modal-body">
+              {(() => {
+                const row = editableResult?.rows.find((r) => r.id === showMatchTankModal);
+                if (!row) return null;
+                return (
+                  <>
+                    <div className="match-tank-current">
+                      <p>
+                        当前鱼缸名称：<strong>{row.tankName || "(未填写)"}</strong>
+                      </p>
+                      <p className="match-tank-hint">
+                        选择一个已有鱼缸进行关联，关联后将使用该鱼缸的参数阈值进行评估。
+                      </p>
+                    </div>
+                    {tanks.length === 0 ? (
+                      <div className="empty-state">
+                        <p>暂无已建档的鱼缸</p>
+                      </div>
+                    ) : (
+                      <div className="match-tank-list">
+                        {row.matchedTankId && (
+                          <button
+                            type="button"
+                            className="match-tank-item match-tank-clear"
+                            onClick={() => handleMatchTank(showMatchTankModal, null)}
+                          >
+                            <span className="match-tank-clear-icon">✕</span>
+                            <span>取消关联</span>
+                          </button>
+                        )}
+                        {tanks.map((tank) => (
+                          <button
+                            key={tank.id}
+                            type="button"
+                            className={`match-tank-item ${
+                              row.matchedTankId === tank.id ? "match-tank-selected" : ""
+                            }`}
+                            onClick={() => handleMatchTank(showMatchTankModal, tank.id)}
+                          >
+                            <span className={`tank-type-tag tank-type-${tank.tankType}`}>
+                              {tank.tankType}
+                            </span>
+                            <span className="match-tank-name">{tank.name}</span>
+                            {row.matchedTankId === tank.id && (
+                              <span className="match-tank-check">✓</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setShowMatchTankModal(null)}
+              >
+                关闭
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

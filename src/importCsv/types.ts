@@ -39,3 +39,38 @@ export interface PreparedRecord {
   status: RecordStatus;
   note: string;
 }
+
+export type TankMatchStatus = "matched" | "unmatched" | "manual" | "new";
+
+export interface EditableRow {
+  id: string;
+  rowIndex: number;
+  rawLine: string;
+  tankName: string;
+  recordedAt: string;
+  metrics: WaterMetrics;
+  remark: string;
+  tankMatchStatus: TankMatchStatus;
+  matchedTankId?: string;
+  isError: boolean;
+  errors: string[];
+  missingFields: string[];
+  isModified: boolean;
+  originalTankName: string;
+  originalRecordedAt: string;
+  originalMetrics: WaterMetrics;
+}
+
+export interface EditableParseResult {
+  rows: EditableRow[];
+  totalRows: number;
+  validCount: number;
+  errorCount: number;
+  unmatchedTankCount: number;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  missingFields: string[];
+}

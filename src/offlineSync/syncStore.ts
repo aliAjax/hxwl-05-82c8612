@@ -521,7 +521,7 @@ class OfflineSyncStore {
           this.addToQueue(
             entityType,
             entity.id,
-            entity.syncMeta.pendingOperation,
+            entity.syncMeta.pendingOperation!,
             entity
           );
           promoted++;

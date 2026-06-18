@@ -5,9 +5,14 @@ import type {
   RowResult,
   ValidRow,
   ErrorRow,
+  EditableRow,
+  EditableParseResult,
+  ValidationResult,
+  TankMatchStatus,
 } from "./types";
+import type { TankProfile } from "../db/types";
 
-const FIELD_ALIASES: Record<keyof ParsedWaterRecord | keyof WaterMetrics, string[]> = {
+const FIELD_ALIASES: Record<string, string[]> = {
   tankName: ["鱼缸名称", "鱼缸", "缸名", "tank", "tankname", "name"],
   recordedAt: ["检测时间", "时间", "日期", "检测日期", "recordedat", "time", "date", "datetime"],
   ph: ["pH", "ph", "PH", "酸碱度", "ph值"],
@@ -403,3 +408,208 @@ export function getMissingFieldSummary(result: ParseResult): MissingFieldSummary
 
   return summary;
 }
+
+const METRIC_VALIDATION_RANGES: Record<string, { min: number; max: number; label: string }> = {
+  ph: { min: 0, max: 14, label: "pH" },
+  ammonia: { min: 0, max: 100, label: "氨氮" },
+  nitrite: { min: 0, max: 100, label: "亚硝酸盐" },
+  nitrate: { min: 0, max: 1000, label: "硝酸盐" },
+  hardness: { min: 0, max: 50, label: "硬度" },
+  temperature: { min: 0, max: 50, label: "温度" },
+};
+
+function validateSingleRow(
+  tankName: string,
+  recordedAt: string,
+  metrics: WaterMetrics
+): ValidationResult {
+  const errors: string[] = [];
+  const missingFields: string[] = [];
+
+  if (!tankName.trim()) {
+    missingFields.push("tankName");
+  }
+
+  if (!recordedAt.trim()) {
+    missingFields.push("recordedAt");
+  } else {
+    const parsedDate = parseDateTime(recordedAt);
+    if (!parsedDate) {
+      errors.push(`检测时间格式不正确: ${recordedAt}`);
+    }
+  }
+
+  const numericFields = Object.keys(METRIC_VALIDATION_RANGES) as (keyof WaterMetrics)[];
+  numericFields.forEach((field) => {
+    const value = metrics[field];
+    if (!value.trim()) {
+      missingFields.push(field);
+      return;
+    }
+    const num = parseFloat(value);
+    if (isNaN(num)) {
+      errors.push(`${METRIC_VALIDATION_RANGES[field].label}格式不正确: ${value}`);
+      return;
+    }
+    const range = METRIC_VALIDATION_RANGES[field];
+    if (num < range.min || num > range.max) {
+      errors.push(`${range.label}应在 ${range.min}-${range.max} 范围内，当前值: ${value}`);
+    }
+  });
+
+  const hasAnyMetric = numericFields.some((k) => metrics[k].trim() !== "");
+  if (!hasAnyMetric) {
+    errors.push("至少需要一项水质指标(pH、氨氮、亚硝酸盐、硝酸盐、硬度、温度)");
+  }
+
+  return {
+    isValid: errors.length === 0 && !missingFields.includes("tankName"),
+    errors,
+    missingFields,
+  };
+}
+
+function determineTankMatchStatus(
+  tankName: string,
+  tanks: TankProfile[]
+): { status: TankMatchStatus; matchedTankId?: string } {
+  const trimmedName = tankName.trim();
+  if (!trimmedName) {
+    return { status: "unmatched" };
+  }
+  const matchedTank = tanks.find((t) => t.name === trimmedName);
+  if (matchedTank) {
+    return { status: "matched", matchedTankId: matchedTank.id };
+  }
+  return { status: "unmatched" };
+}
+
+function convertToEditableRows(
+  parseResult: ParseResult,
+  tanks: TankProfile[]
+): EditableRow[] {
+  const editableRows: EditableRow[] = [];
+
+  parseResult.validRows.forEach((row) => {
+    const { status, matchedTankId } = determineTankMatchStatus(row.data.tankName, tanks);
+    editableRows.push({
+      id: `row-${row.rowIndex}`,
+      rowIndex: row.rowIndex,
+      rawLine: row.rawLine,
+      tankName: row.data.tankName,
+      recordedAt: row.data.recordedAt,
+      metrics: { ...row.data.metrics },
+      remark: row.data.remark,
+      tankMatchStatus: status,
+      matchedTankId,
+      isError: false,
+      errors: [],
+      missingFields: [...row.missingFields],
+      isModified: false,
+      originalTankName: row.data.tankName,
+      originalRecordedAt: row.data.recordedAt,
+      originalMetrics: { ...row.data.metrics },
+    });
+  });
+
+  parseResult.errorRows.forEach((row) => {
+    const { status, matchedTankId } = determineTankMatchStatus(
+      row.rawLine.split(",")[0] || "",
+      tanks
+    );
+    editableRows.push({
+      id: `row-${row.rowIndex}`,
+      rowIndex: row.rowIndex,
+      rawLine: row.rawLine,
+      tankName: row.rawLine.split(",")[0]?.trim() || "",
+      recordedAt: parseDateTime(row.rawLine.split(",")[1] || "") || "",
+      metrics: {
+        ph: cleanNumeric(row.rawLine.split(",")[2] || ""),
+        ammonia: cleanNumeric(row.rawLine.split(",")[3] || ""),
+        nitrite: cleanNumeric(row.rawLine.split(",")[4] || ""),
+        nitrate: cleanNumeric(row.rawLine.split(",")[5] || ""),
+        hardness: cleanNumeric(row.rawLine.split(",")[6] || ""),
+        temperature: cleanNumeric(row.rawLine.split(",")[7] || ""),
+        waterChange: row.rawLine.split(",")[8]?.trim() || "",
+      },
+      remark: row.rawLine.split(",")[9]?.trim() || "",
+      tankMatchStatus: status,
+      matchedTankId,
+      isError: true,
+      errors: [...row.errors],
+      missingFields: [...row.missingFields],
+      isModified: false,
+      originalTankName: row.rawLine.split(",")[0]?.trim() || "",
+      originalRecordedAt: parseDateTime(row.rawLine.split(",")[1] || "") || "",
+      originalMetrics: {
+        ph: cleanNumeric(row.rawLine.split(",")[2] || ""),
+        ammonia: cleanNumeric(row.rawLine.split(",")[3] || ""),
+        nitrite: cleanNumeric(row.rawLine.split(",")[4] || ""),
+        nitrate: cleanNumeric(row.rawLine.split(",")[5] || ""),
+        hardness: cleanNumeric(row.rawLine.split(",")[6] || ""),
+        temperature: cleanNumeric(row.rawLine.split(",")[7] || ""),
+        waterChange: row.rawLine.split(",")[8]?.trim() || "",
+      },
+    });
+  });
+
+  editableRows.sort((a, b) => a.rowIndex - b.rowIndex);
+  return editableRows;
+}
+
+function buildEditableParseResult(
+  editableRows: EditableRow[]
+): EditableParseResult {
+  const validCount = editableRows.filter((r) => !r.isError).length;
+  const errorCount = editableRows.filter((r) => r.isError).length;
+  const unmatchedTankCount = editableRows.filter(
+    (r) => r.tankMatchStatus === "unmatched" && r.tankName.trim() !== ""
+  ).length;
+
+  return {
+    rows: editableRows,
+    totalRows: editableRows.length,
+    validCount,
+    errorCount,
+    unmatchedTankCount,
+  };
+}
+
+function validateAndUpdateRow(
+  row: EditableRow,
+  tanks: TankProfile[]
+): EditableRow {
+  const validation = validateSingleRow(row.tankName, row.recordedAt, row.metrics);
+  const { status, matchedTankId } = determineTankMatchStatus(row.tankName, tanks);
+
+  let finalStatus = status;
+  let finalTankId = matchedTankId;
+
+  if (row.tankMatchStatus === "manual" && row.matchedTankId) {
+    finalStatus = "manual";
+    finalTankId = row.matchedTankId;
+  }
+
+  return {
+    ...row,
+    isError: !validation.isValid,
+    errors: validation.errors,
+    missingFields: validation.missingFields,
+    tankMatchStatus: finalStatus,
+    matchedTankId: finalTankId,
+    isModified:
+      row.tankName !== row.originalTankName ||
+      row.recordedAt !== row.originalRecordedAt ||
+      JSON.stringify(row.metrics) !== JSON.stringify(row.originalMetrics),
+  };
+}
+
+export {
+  validateSingleRow,
+  convertToEditableRows,
+  buildEditableParseResult,
+  validateAndUpdateRow,
+  determineTankMatchStatus,
+  parseDateTime,
+  cleanNumeric,
+};

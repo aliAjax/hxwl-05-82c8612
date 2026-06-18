@@ -7,6 +7,13 @@ export {
   MISSING_CATEGORY,
   CATEGORY_LABEL,
   getMissingFieldSummary,
+  validateSingleRow,
+  convertToEditableRows,
+  buildEditableParseResult,
+  validateAndUpdateRow,
+  determineTankMatchStatus,
+  parseDateTime,
+  cleanNumeric,
 } from "./csvParser";
 export type { MissingFieldSummary } from "./csvParser";
 export type { ImportWaterRecordsModalProps } from "./ImportWaterRecordsModal";
@@ -17,4 +24,8 @@ export type {
   ErrorRow,
   RowResult,
   PreparedRecord,
+  EditableRow,
+  EditableParseResult,
+  ValidationResult,
+  TankMatchStatus,
 } from "./types";

@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import "./styles.css";
 import { WaterTrendAnalysis, LiveTrendDataSource } from "./trend";
 import { AlertCenter, generateAlertsFromRecord } from "./alertCenter/AlertCenter";
-import { AlertItem, TreatmentAction, AlertMetricValues } from "./alertCenter/types";
+import { TreatmentAction, AlertMetricValues } from "./alertCenter/types";
 import { dataService } from "./db";
 import type {
   Customer,
@@ -31,6 +31,7 @@ import {
 import { Dashboard } from "./dashboard";
 import { ImportWaterRecordsModal } from "./importCsv";
 import type { PreparedRecord } from "./importCsv";
+import type { AlertItem } from "./alertCenter/types";
 import {
   WaterTestRecorder,
   WaterChangeTaskManager,
@@ -352,14 +353,13 @@ function App() {
 
   const planFilterOptions = ["全部", "已逾期", "即将到期", "正常", "已完成"];
 
-  const handleImportRecords = async (records: PreparedRecord[]) => {
+  const handleImportRecords = async (
+    records: PreparedRecord[],
+    alerts: Omit<AlertItem, "id">[]
+  ) => {
     const newRecords: WaterRecord[] = [];
-    const newAlerts: AlertItem[] = [];
 
     for (const record of records) {
-      const tank = record.tankId
-        ? tanks.find((t) => t.id === record.tankId)
-        : undefined;
       const newRecordData: Omit<WaterRecord, "id"> = {
         tankName: record.tankName,
         tankId: record.tankId,
@@ -370,24 +370,23 @@ function App() {
       };
       const newRecord = await dataService.addWaterRecord(newRecordData);
       newRecords.push(newRecord);
+    }
 
-      const tankType = tank?.tankType || "草缸";
-      const customThresholds = tank?.customThresholds;
-      const recordAlerts = generateAlertsFromRecord(
-        newRecord.id,
-        record.tankName,
-        record.tankId,
-        tankType,
-        record.metrics as unknown as AlertMetricValues,
-        record.recordedAt,
-        customThresholds
-      );
-      if (recordAlerts.length > 0) {
-        const savedAlerts = await dataService.addAlerts(
-          recordAlerts.map((a) => ({ ...a, id: undefined! } as Omit<AlertItem, "id">))
+    let savedAlerts: AlertItem[] = [];
+    if (alerts.length > 0) {
+      const alertsWithRecordIds = alerts.map((alert, index) => {
+        const correspondingRecord = records[index];
+        const matchingNewRecord = newRecords.find(
+          (r) =>
+            r.tankName === correspondingRecord?.tankName &&
+            r.recordedAt === correspondingRecord?.recordedAt
         );
-        newAlerts.push(...savedAlerts);
-      }
+        return {
+          ...alert,
+          recordId: matchingNewRecord?.id || alert.recordId,
+        };
+      });
+      savedAlerts = await dataService.addAlerts(alertsWithRecordIds);
     }
 
     setWaterRecords((prev) => {
@@ -398,8 +397,8 @@ function App() {
       );
       return combined;
     });
-    if (newAlerts.length > 0) {
-      setAlerts((prev) => [...newAlerts, ...prev]);
+    if (savedAlerts.length > 0) {
+      setAlerts((prev) => [...savedAlerts, ...prev]);
     }
   };
 
