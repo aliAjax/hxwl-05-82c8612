@@ -1,6 +1,5 @@
-import { useState } from "react";
 import type { TankDashboardInfo } from "./types";
-import type { WaterRecord, WaterMetrics, RecordStatus } from "../db/types";
+import type { WaterRecord, WaterMetrics } from "../db/types";
 import type { RiskFactor, RiskLevel } from "../riskEngine";
 import { getRiskLevelColor } from "../riskEngine";
 
@@ -45,35 +44,9 @@ function getRiskScoreProgressColor(score: number): string {
   return "#16a34a";
 }
 
-const SUMMARY_METRICS: (keyof Omit<WaterMetrics, "waterChange">)[] = [
-  "ph",
-  "ammonia",
-  "nitrite",
-  "nitrate",
-  "temperature",
-];
-
-const getStatusClass = (status: RecordStatus) => {
-  switch (status) {
-    case "稳定":
-      return "status-ok";
-    case "关注":
-      return "status-watch";
-    case "异常":
-      return "status-danger";
-  }
-};
-
 export function TankDetailPanel({ info, records, onClose }: TankDetailPanelProps) {
   const { tank, customer, latestRecord, nextPlan, riskLevel, pendingAlerts, riskAssessment } = info;
   const risk = riskAssessment;
-  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
-
-  const recentRecords = records.slice(0, 5);
-
-  const toggleRecordExpand = (id: string) => {
-    setExpandedRecordId((prev) => (prev === id ? null : id));
-  };
 
   return (
     <div className="detail-overlay" onClick={onClose}>
@@ -270,106 +243,90 @@ export function TankDetailPanel({ info, records, onClose }: TankDetailPanelProps
 
           {latestRecord && (
             <section className="detail-section">
-              <h3>最近一次检测摘要</h3>
-              <div className="latest-summary-card">
-                <header className="latest-summary-header">
-                  <span className="record-time">{latestRecord.recordedAt}</span>
-                  <span className={`record-status record-status-${latestRecord.status}`}>
-                    {latestRecord.status}
-                  </span>
-                </header>
-                <div className="latest-summary-grid">
-                  {SUMMARY_METRICS.map((key) => {
+              <h3>最近一次检测（{latestRecord.recordedAt}）</h3>
+              <div className="detail-metrics-grid">
+                {(Object.keys(METRIC_LABELS) as (keyof Omit<WaterMetrics, "waterChange">)[]).map(
+                  (key) => {
                     const value = latestRecord.metrics[key];
+                    if (!value) return null;
                     return (
-                      <div key={key} className="latest-summary-item">
-                      <span className="latest-summary-label">
-                        {METRIC_LABELS[key]}
-                      </span>
-                      <strong className="latest-summary-value">
-                        {value || "—"}
-                        {value && METRIC_UNITS[key] && (
-                          <span className="latest-summary-unit">
+                      <div key={key} className="detail-metric-card">
+                        <span className="detail-metric-label">
+                          {METRIC_LABELS[key]}
+                        </span>
+                        <strong className="detail-metric-value">
+                          {value}
+                          <span className="detail-metric-unit">
                             {METRIC_UNITS[key]}
                           </span>
-                        )}
-                      </strong>
-                    </div>
-                  );
-                  })}
-                  <div className="latest-summary-item">
-                    <span className="latest-summary-label">换水量</span>
-                    <strong className="latest-summary-value">
-                      {latestRecord.metrics.waterChange || "—"}
+                        </strong>
+                      </div>
+                    );
+                  }
+                )}
+                {latestRecord.metrics.waterChange && (
+                  <div className="detail-metric-card">
+                    <span className="detail-metric-label">换水量</span>
+                    <strong className="detail-metric-value">
+                      {latestRecord.metrics.waterChange}
                     </strong>
                   </div>
-                </div>
-                {latestRecord.note && (
-                  <p className="latest-summary-note">{latestRecord.note}</p>
                 )}
               </div>
+              {latestRecord.note && (
+                <p className="detail-note">{latestRecord.note}</p>
+              )}
             </section>
           )}
 
           <section className="detail-section">
-            <h3>最近五次检测记录</h3>
-            {recentRecords.length === 0 ? (
+            <h3>近期水质记录（{records.length}条）</h3>
+            {records.length === 0 ? (
               <div className="empty-state empty-state-compact">
                 <div className="empty-icon">💧</div>
                 <p>暂无水质记录</p>
               </div>
             ) : (
               <div className="detail-record-list">
-                {recentRecords.map((record, idx) => {
-                  const isExpanded = expandedRecordId === record.id;
-                  return (
-                    <article
-                      key={record.id}
-                      className={`detail-record-item ${isExpanded ? "record-expanded" : ""}`}
-                      onClick={() => toggleRecordExpand(record.id)}
-                    >
-                      <div className={`record-index ${getStatusClass(record.status)}`}>
-                        {String(idx + 1).padStart(2, "0")}
-                      </div>
-                      <div className="detail-record-content">
-                        <header className="detail-record-header">
-                          <span className="record-time">{record.recordedAt}</span>
-                          <div className="detail-record-header-right">
-                            <span className={`record-status record-status-${record.status}`}>
-                              {record.status}
-                            </span>
-                            <span className="record-expand-icon">
-                              {isExpanded ? "▲" : "▼"}
-                            </span>
-                          </div>
-                        </header>
-                        <div className="detail-record-metrics">
-                          {SUMMARY_METRICS.map((key) => {
+                {records.slice(0, 20).map((record, idx) => (
+                  <article key={record.id} className="detail-record-item">
+                    <div className={`record-index ${
+                      record.status === "稳定" ? "status-ok" :
+                      record.status === "关注" ? "status-watch" : "status-danger"
+                    }`}>
+                      {String(idx + 1).padStart(2, "0")}
+                    </div>
+                    <div className="detail-record-content">
+                      <header className="detail-record-header">
+                        <span className="record-time">{record.recordedAt}</span>
+                        <span className={`record-status record-status-${record.status}`}>
+                          {record.status}
+                        </span>
+                      </header>
+                      <div className="detail-record-metrics">
+                        {(Object.keys(METRIC_LABELS) as (keyof Omit<WaterMetrics, "waterChange">)[]).map(
+                          (key) => {
                             const v = record.metrics[key];
+                            if (!v) return null;
                             return (
                               <span key={key} className="detail-metric-chip">
-                                {METRIC_LABELS[key]} {v || "—"}{v && METRIC_UNITS[key]}
+                                {METRIC_LABELS[key]} {v}{METRIC_UNITS[key]}
                               </span>
                             );
-                          })}
+                          }
+                        )}
+                        {record.metrics.waterChange && (
                           <span className="detail-metric-chip">
-                            换水量 {record.metrics.waterChange || "—"}
+                            换水量 {record.metrics.waterChange}
                           </span>
-                        </div>
-                        {isExpanded && (
-                          <div className="record-expand-content">
-                            <div className="record-expand-section">
-                              <h4>备注与异常说明</h4>
-                              <p className="record-expand-note">
-                                {record.note || "暂无备注"}
-                              </p>
-                            </div>
-                          </div>
                         )}
                       </div>
-                    </article>
-                  );
-                })}
+                      {record.note && (
+                        <p className="detail-record-note">{record.note}</p>
+                      )}
+                    </div>
+                  </article>
+                ))}
               </div>
             )}
           </section>
