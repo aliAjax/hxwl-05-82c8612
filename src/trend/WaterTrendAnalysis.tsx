@@ -77,8 +77,8 @@ export function WaterTrendAnalysis({
     return result;
   }, [trendData, activeMetric]);
 
-  const range = useMemo(() => {
-    if (activeTankType === "全部") return METRIC_RANGES[activeMetric];
+  const headerRange = useMemo(() => {
+    if (activeTankType === "全部") return null;
     return getMetricRangeByTankType(activeMetric, activeTankType);
   }, [activeMetric, activeTankType]);
 
@@ -141,18 +141,27 @@ export function WaterTrendAnalysis({
       </div>
 
       <div className="trend-summary">
-        <div className="trend-summary-item">
-          <span className="trend-summary-label">正常范围</span>
-          <span className="trend-summary-value">
-            {range.ok[0]} ~ {range.ok[1]} {range.unit}
-          </span>
-        </div>
-        <div className="trend-summary-item">
-          <span className="trend-summary-label">警戒范围</span>
-          <span className="trend-summary-value">
-            {range.warning[0]} ~ {range.warning[1]} {range.unit}
-          </span>
-        </div>
+        {headerRange ? (
+          <>
+            <div className="trend-summary-item">
+              <span className="trend-summary-label">正常范围</span>
+              <span className="trend-summary-value">
+                {headerRange.ok[0]} ~ {headerRange.ok[1]} {headerRange.unit}
+              </span>
+            </div>
+            <div className="trend-summary-item">
+              <span className="trend-summary-label">警戒范围</span>
+              <span className="trend-summary-value">
+                {headerRange.warning[0]} ~ {headerRange.warning[1]} {headerRange.unit}
+              </span>
+            </div>
+          </>
+        ) : (
+          <div className="trend-summary-item trend-summary-full">
+            <span className="trend-summary-label">范围说明</span>
+            <span className="trend-summary-value">各鱼缸按自身适养参数评估状态</span>
+          </div>
+        )}
         <div className="trend-summary-item trend-summary-warning">
           <span className="trend-summary-label">关注鱼缸</span>
           <span className="trend-summary-value">
@@ -182,6 +191,13 @@ export function WaterTrendAnalysis({
         <div className="trend-grid">
           {trendData.map((tank) => {
             const tankStats = stats[tank.tankId];
+            const tankRange = getMetricRangeByTankType(
+              activeMetric,
+              tank.tankType,
+              tank.customThresholds
+            );
+            const hasCustomThresholds =
+              tank.customThresholds && tank.customThresholds[activeMetric];
             return (
               <article key={tank.tankId} className="trend-card">
                 <header className="trend-card-header">
@@ -190,16 +206,28 @@ export function WaterTrendAnalysis({
                       {tank.tankType}
                     </span>
                     <h3>{tank.tankName}</h3>
+                    <div className="trend-card-range">
+                      <span className="trend-card-range-label">
+                        {hasCustomThresholds ? "自定义范围" : "适用范围"}
+                      </span>
+                      <span className="trend-card-range-value">
+                        {tankRange.ok[0]} ~ {tankRange.ok[1]} {tankRange.unit}
+                      </span>
+                    </div>
                   </div>
                   {tankStats && (
                     <div className="trend-card-stats">
                       <div className="trend-latest-value">
                         {formatValue(tankStats.latest)}
-                        <span className="trend-unit">{range.unit}</span>
+                        <span className="trend-unit">{tankRange.unit}</span>
                       </div>
                       <div
                         className={`trend-change trend-change-${
-                          tankStats.change > 0 ? "up" : tankStats.change < 0 ? "down" : "flat"
+                          tankStats.change > 0
+                            ? "up"
+                            : tankStats.change < 0
+                              ? "down"
+                              : "flat"
                         }`}
                       >
                         {tankStats.change > 0
@@ -223,7 +251,9 @@ export function WaterTrendAnalysis({
 
                 {tankStats && tankStats.status !== "normal" && (
                   <div className={`trend-alert trend-alert-${tankStats.status}`}>
-                    {tankStats.status === "danger" ? "⚠️ 指标异常，需立即处理" : "⚡ 指标偏离，建议关注"}
+                    {tankStats.status === "danger"
+                      ? "⚠️ 指标异常，需立即处理"
+                      : "⚡ 指标偏离，建议关注"}
                   </div>
                 )}
               </article>

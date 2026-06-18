@@ -2,6 +2,15 @@ export type TrendMetric = "ph" | "ammonia" | "nitrate" | "temperature";
 
 export type TrendTankType = "草缸" | "海缸" | "三湖缸" | "繁殖缸";
 
+export interface TrendThresholdRange {
+  ok: [number, number];
+  warning: [number, number];
+}
+
+export type TrendCustomThresholds = Partial<
+  Record<TrendMetric, TrendThresholdRange>
+>;
+
 export interface TrendDataPoint {
   timestamp: number;
   value: number;
@@ -12,6 +21,7 @@ export interface TankTrendData {
   tankId: string;
   tankName: string;
   tankType: string;
+  customThresholds?: TrendCustomThresholds;
   metrics: Record<TrendMetric, TrendDataPoint[]>;
 }
 
@@ -86,9 +96,18 @@ const VALID_TANK_TYPES: TrendTankType[] = ["草缸", "海缸", "三湖缸", "繁
 
 export function getMetricRangeByTankType(
   metric: TrendMetric,
-  tankType?: string
+  tankType?: string,
+  customThresholds?: TrendCustomThresholds
 ): MetricRange {
   const baseRange = METRIC_RANGES[metric];
+  if (customThresholds && customThresholds[metric]) {
+    const custom = customThresholds[metric]!;
+    return {
+      ...baseRange,
+      ok: custom.ok,
+      warning: custom.warning,
+    };
+  }
   if (!tankType) return baseRange;
   const validType = VALID_TANK_TYPES.includes(tankType as TrendTankType)
     ? (tankType as TrendTankType)
@@ -106,9 +125,10 @@ export function getMetricRangeByTankType(
 export function evaluateDataPoint(
   metric: TrendMetric,
   value: number,
-  tankType?: string
+  tankType?: string,
+  customThresholds?: TrendCustomThresholds
 ): "normal" | "warning" | "danger" {
-  const range = getMetricRangeByTankType(metric, tankType);
+  const range = getMetricRangeByTankType(metric, tankType, customThresholds);
   const isZeroRange = range.ok[0] === 0 && range.ok[1] === 0;
 
   if (value < range.warning[0] || value > range.warning[1]) return "danger";

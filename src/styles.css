@@ -1151,6 +1151,32 @@ button:disabled {
   color: #be123c;
 }
 
+.trend-summary-full {
+  grid-column: span 2;
+  background: #f1f5f9;
+}
+
+.trend-card-range {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.trend-card-range-label {
+  color: #64748b;
+  font-weight: 500;
+  background: #f1f5f9;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.trend-card-range-value {
+  color: #0f766e;
+  font-weight: 600;
+}
+
 .trend-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));

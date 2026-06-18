@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import "./styles.css";
-import { WaterTrendAnalysis, mockDataSource } from "./trend";
+import { WaterTrendAnalysis, LiveTrendDataSource } from "./trend";
 import { AlertCenter, generateAlertsFromRecord } from "./alertCenter/AlertCenter";
 import { AlertItem, TreatmentAction, AlertMetricValues } from "./alertCenter/types";
 import { dataService } from "./db";
@@ -310,6 +310,11 @@ function App() {
   const [customTankName, setCustomTankName] = useState<string>("");
   const [waterRecords, setWaterRecords] = useState<WaterRecord[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+
+  const trendDataSource = useMemo(
+    () => new LiveTrendDataSource(tanks, waterRecords, 30),
+    [tanks, waterRecords]
+  );
 
   const [waterChangePlans, setWaterChangePlans] = useState<WaterChangePlan[]>([]);
   const [planModalOpen, setPlanModalOpen] = useState(false);
@@ -946,7 +951,7 @@ function App() {
         pendingCount={pendingAlertCount}
       />
 
-      <WaterTrendAnalysis dataSource={mockDataSource} />
+      <WaterTrendAnalysis dataSource={trendDataSource} />
 
       <Dashboard
         customers={customers}
