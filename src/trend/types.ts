@@ -1,4 +1,4 @@
-export type TrendMetric = "ph" | "ammonia" | "nitrate" | "temperature";
+export type TrendMetric = "ph" | "ammonia" | "nitrate" | "hardness" | "temperature";
 
 export type TrendTankType = "草缸" | "海缸" | "三湖缸" | "繁殖缸";
 
@@ -55,6 +55,13 @@ export const METRIC_RANGES: Record<TrendMetric, MetricRange> = {
     label: "硝酸盐",
     color: "#8b5cf6",
   },
+  hardness: {
+    ok: [4, 12],
+    warning: [2, 18],
+    unit: "dGH",
+    label: "硬度",
+    color: "#0f766e",
+  },
   temperature: {
     ok: [24, 28],
     warning: [20, 32],
@@ -71,26 +78,36 @@ const TANK_TYPE_RANGES: Record<
   草缸: {
     ph: { ok: [6.0, 7.0], warning: [5.5, 7.5] },
     nitrate: { ok: [0, 20], warning: [0, 40] },
+    hardness: { ok: [4, 10], warning: [2, 14] },
     temperature: { ok: [24, 28], warning: [22, 30] },
   },
   海缸: {
     ph: { ok: [8.0, 8.4], warning: [7.8, 8.6] },
     nitrate: { ok: [0, 5], warning: [0, 10] },
+    hardness: { ok: [8, 12], warning: [7, 15] },
     temperature: { ok: [25, 27], warning: [24, 28] },
   },
   三湖缸: {
     ph: { ok: [7.8, 8.6], warning: [7.5, 9.0] },
     nitrate: { ok: [0, 30], warning: [0, 60] },
+    hardness: { ok: [10, 20], warning: [8, 25] },
     temperature: { ok: [25, 28], warning: [23, 30] },
   },
   繁殖缸: {
     ph: { ok: [6.5, 7.2], warning: [6.0, 7.6] },
     nitrate: { ok: [0, 10], warning: [0, 20] },
+    hardness: { ok: [3, 8], warning: [2, 12] },
     temperature: { ok: [25, 27], warning: [24, 28] },
   },
 };
 
-export const TREND_METRICS: TrendMetric[] = ["ph", "ammonia", "nitrate", "temperature"];
+export const TREND_METRICS: TrendMetric[] = [
+  "ph",
+  "ammonia",
+  "nitrate",
+  "hardness",
+  "temperature",
+];
 
 const VALID_TANK_TYPES: TrendTankType[] = ["草缸", "海缸", "三湖缸", "繁殖缸"];
 

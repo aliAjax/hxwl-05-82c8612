@@ -13,6 +13,7 @@ const METRIC_KEY_MAP: Record<TrendMetric, keyof WaterRecord["metrics"]> = {
   ph: "ph",
   ammonia: "ammonia",
   nitrate: "nitrate",
+  hardness: "hardness",
   temperature: "temperature",
 };
 
