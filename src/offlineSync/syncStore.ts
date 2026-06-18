@@ -9,6 +9,10 @@ import type {
   OfflineWaterChangePlan,
   OfflineAlert,
   MaintenanceTask,
+  OfflineRetestTask,
+  OfflineRetestTaskStatus,
+  OfflineRetestResult,
+  OfflineTreatmentAction,
 } from "./types";
 
 const STORAGE_KEYS = {
@@ -17,6 +21,7 @@ const STORAGE_KEYS = {
   WATER_PLANS: "hxwl_offline_water_plans",
   ALERTS: "hxwl_offline_alerts",
   TASKS: "hxwl_offline_tasks",
+  RETEST_TASKS: "hxwl_offline_retest_tasks",
   NETWORK_STATUS: "hxwl_offline_network_status",
 };
 
@@ -469,12 +474,254 @@ class OfflineSyncStore {
     this.notifyListeners();
   }
 
+  getRetestTasks(): OfflineRetestTask[] {
+    const tasks = this.loadFromStorage<OfflineRetestTask[]>(
+      STORAGE_KEYS.RETEST_TASKS,
+      []
+    );
+    return this.checkAndUpdateOverdueRetestTasks(tasks);
+  }
+
+  private checkAndUpdateOverdueRetestTasks(
+    tasks: OfflineRetestTask[]
+  ): OfflineRetestTask[] {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let hasUpdates = false;
+    const updated = tasks.map((task) => {
+      if (task.status === "pending") {
+        const dueDate = new Date(task.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        if (dueDate.getTime() < today.getTime()) {
+          hasUpdates = true;
+          return { ...task, status: "overdue" as OfflineRetestTaskStatus };
+        }
+      }
+      return task;
+    });
+    if (hasUpdates) {
+      this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(updated));
+      this.notifyListeners();
+    }
+    return updated.sort((a, b) => {
+      const statusRank: Record<string, number> = {
+        overdue: 0,
+        pending: 1,
+        completed: 2,
+      };
+      const rankA = statusRank[a.status] ?? 3;
+      const rankB = statusRank[b.status] ?? 3;
+      if (rankA !== rankB) return rankA - rankB;
+      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+    });
+  }
+
+  saveRetestTask(
+    task: Omit<OfflineRetestTask, "id" | "syncMeta" | "createdAt" | "status" | "retestResult"> & {
+      createdAt?: string;
+      status?: OfflineRetestTaskStatus;
+      retestResult?: OfflineRetestResult;
+    } & Partial<Pick<OfflineRetestTask, "id" | "syncMeta">>
+  ): OfflineRetestTask {
+    const tasks = this.getRetestTasks();
+    const now = formatDate(new Date());
+
+    let existing: OfflineRetestTask | undefined;
+    if (task.id) {
+      existing = tasks.find((t) => t.id === task.id);
+    }
+
+    const result: OfflineRetestTask = {
+      id: task.id || existing?.id || generateId(),
+      sourceAlertId: task.sourceAlertId,
+      sourceAlertMetric: task.sourceAlertMetric,
+      sourceAlertMetricLabel: task.sourceAlertMetricLabel,
+      tankName: task.tankName,
+      tankId: task.tankId,
+      tankType: task.tankType,
+      triggerTreatment: task.triggerTreatment,
+      treatmentNote: task.treatmentNote,
+      originalValue: task.originalValue,
+      originalUnit: task.originalUnit,
+      thresholdRange: task.thresholdRange,
+      dueDate: task.dueDate,
+      status: task.status ?? existing?.status ?? "pending",
+      retestRecordId: task.retestRecordId ?? existing?.retestRecordId,
+      retestValue: task.retestValue ?? existing?.retestValue,
+      retestResult: task.retestResult ?? existing?.retestResult ?? null,
+      createdAt: task.createdAt || existing?.createdAt || now,
+      completedAt: task.completedAt ?? existing?.completedAt,
+      handler: task.handler ?? existing?.handler,
+      syncMeta: task.syncMeta || existing?.syncMeta || createSyncMeta("draft"),
+    };
+
+    const allTasks = tasks.filter((t) => t.id !== result.id);
+    allTasks.unshift(result);
+
+    this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(allTasks));
+    this.notifyListeners();
+    return result;
+  }
+
+  updateRetestTaskSyncStatus(
+    id: string,
+    status: SyncStatus,
+    error?: string,
+    conflictData?: SyncMeta["conflictData"]
+  ) {
+    const tasks = this.getRetestTasks();
+    const idx = tasks.findIndex((t) => t.id === id);
+    if (idx !== -1) {
+      tasks[idx].syncMeta = {
+        ...tasks[idx].syncMeta,
+        syncStatus: status,
+        syncError: error,
+        lastSyncAt:
+          status === "synced" ? formatDate(new Date()) : tasks[idx].syncMeta.lastSyncAt,
+        syncAttempts: tasks[idx].syncMeta.syncAttempts + 1,
+        conflictData,
+      };
+      this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(tasks));
+      this.notifyListeners();
+    }
+  }
+
+  deleteRetestTask(id: string) {
+    const tasks = this.getRetestTasks().filter((t) => t.id !== id);
+    this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(tasks));
+    this.notifyListeners();
+  }
+
+  createRetestTaskFromAlert(
+    alert: OfflineAlert,
+    treatment: OfflineTreatmentAction,
+    treatmentNote: string,
+    handler: string
+  ): { retestTask: OfflineRetestTask; updatedAlert: OfflineAlert } {
+    const dueDaysMap: Record<OfflineTreatmentAction, number> = {
+      "复测": 1,
+      "换水": 3,
+      "停喂": 2,
+      "补菌": 3,
+      "温度调整": 2,
+      "其他": 2,
+    };
+    const dueDays = dueDaysMap[treatment] ?? 2;
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + dueDays);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const dueDateStr = `${dueDate.getFullYear()}-${pad(dueDate.getMonth() + 1)}-${pad(dueDate.getDate())}`;
+
+    const retestTask = this.saveRetestTask({
+      sourceAlertId: alert.id,
+      sourceAlertMetric: alert.metric,
+      sourceAlertMetricLabel: alert.metricLabel || alert.metric,
+      tankName: alert.tankName,
+      tankId: alert.tankId,
+      tankType: alert.tankType,
+      triggerTreatment: treatment,
+      treatmentNote,
+      originalValue: alert.value,
+      originalUnit: alert.unit || "",
+      thresholdRange: alert.thresholdRange || alert.threshold,
+      dueDate: dueDateStr,
+      handler,
+    });
+
+    const updatedAlert = this.saveAlert({
+      ...alert,
+      retestTaskId: retestTask.id,
+    });
+
+    return { retestTask, updatedAlert };
+  }
+
+  completeRetestTaskFromRecord(
+    record: OfflineWaterRecord
+  ): { completedTasks: OfflineRetestTask[]; updatedAlerts: OfflineAlert[] } {
+    const tasks = this.getRetestTasks();
+    const alerts = this.getAlerts();
+    const completedTasks: OfflineRetestTask[] = [];
+    const updatedAlerts: OfflineAlert[] = [];
+
+    const pendingTasks = tasks.filter(
+      (t) =>
+        (t.status === "pending" || t.status === "overdue") &&
+        (t.tankId === record.tankId ||
+          (t.tankId === undefined && t.tankName === record.tankName))
+    );
+
+    for (const task of pendingTasks) {
+      const metricKey = task.sourceAlertMetric as keyof typeof record.metrics;
+      const retestValue = record.metrics[metricKey];
+      if (retestValue && retestValue.trim()) {
+        const isRecovered = this.evaluateMetricForRetest(
+          task.sourceAlertMetric,
+          retestValue,
+          task.tankType
+        );
+        const now = formatDate(new Date());
+
+        const completedTask = this.saveRetestTask({
+          ...task,
+          status: "completed",
+          retestRecordId: record.id,
+          retestValue,
+          retestResult: isRecovered ? "recovered" : "not_recovered",
+          completedAt: now,
+        });
+        completedTasks.push(completedTask);
+
+        const alert = alerts.find((a) => a.id === task.sourceAlertId);
+        if (alert) {
+          const updatedAlert = this.saveAlert({
+            ...alert,
+            retestResult: isRecovered ? "recovered" : "not_recovered",
+            isClosed: isRecovered,
+            closedAt: isRecovered ? now : undefined,
+          });
+          updatedAlerts.push(updatedAlert);
+        }
+      }
+    }
+
+    return { completedTasks, updatedAlerts };
+  }
+
+  private evaluateMetricForRetest(
+    metric: string,
+    value: string,
+    tankType: string
+  ): boolean {
+    const numVal = parseFloat(value);
+    if (isNaN(numVal)) return false;
+
+    const isSaltwater = tankType.includes("海") || tankType.includes("海水");
+    const isBreeding = tankType.includes("繁殖");
+
+    const thresholds: Record<string, { min?: number; max?: number }> = {
+      ph: { min: 6.5, max: 8.5 },
+      ammonia: { max: 0.25 },
+      nitrite: { max: 0.3 },
+      nitrate: { max: isBreeding ? 20 : 40 },
+      hardness: { min: 4, max: isSaltwater ? 12 : 10 },
+      temperature: { min: 22, max: isSaltwater ? 27 : 28 },
+    };
+
+    const t = thresholds[metric];
+    if (!t) return true;
+    if (t.min !== undefined && numVal < t.min) return false;
+    if (t.max !== undefined && numVal > t.max) return false;
+    return true;
+  }
+
   getSyncStats(): SyncStats {
     const records = this.getWaterRecords();
     const plans = this.getWaterPlans();
     const alerts = this.getAlerts();
     const tasks = this.getTasks();
-    const allEntities = [...records, ...plans, ...alerts, ...tasks];
+    const retestTasks = this.getRetestTasks();
+    const allEntities = [...records, ...plans, ...alerts, ...tasks, ...retestTasks];
     const queue = this.getSyncQueue();
 
     const stats: SyncStats = {
@@ -542,6 +789,9 @@ class OfflineSyncStore {
 
     const tasks = promoteList(this.getTasks(), "maintenanceTask");
     this.saveToStorage(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
+
+    const retestTasks = promoteList(this.getRetestTasks(), "retestTask");
+    this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(retestTasks));
 
     if (promoted > 0) {
       this.notifyListeners();
@@ -696,6 +946,119 @@ class OfflineSyncStore {
       status: "pending",
       priority: "medium",
       createdAt: yesterdayStr,
+      syncMeta: { ...createSyncMeta("synced"), lastSyncAt: yesterdayStr },
+    });
+
+    this.saveAlert({
+      id: "offline_demo_alert_retest_1",
+      recordId: "offline_demo_record_3",
+      tankName: "繁殖缸C",
+      tankType: "繁殖缸",
+      metric: "nitrite",
+      metricLabel: "亚硝酸盐",
+      value: "0.8",
+      unit: "mg/L",
+      threshold: "≤ 0.5",
+      thresholdRange: "≤ 0.5 mg/L",
+      severity: "severe",
+      description: "亚硝酸盐浓度超过安全阈值，可能导致鱼类中毒",
+      status: "processed",
+      treatment: "换水",
+      treatmentNote: "已换水30%，计划3天后复测",
+      handler: "张技师",
+      createdAt: twoDaysAgoStr,
+      processedAt: twoDaysAgoStr,
+      retestTaskId: "offline_demo_retest_1",
+      retestResult: null,
+      isClosed: false,
+      syncMeta: { ...createSyncMeta("draft"), pendingOperation: "update" },
+    });
+
+    this.saveRetestTask({
+      id: "offline_demo_retest_1",
+      sourceAlertId: "offline_demo_alert_retest_1",
+      sourceAlertMetric: "nitrite",
+      sourceAlertMetricLabel: "亚硝酸盐",
+      tankName: "繁殖缸C",
+      tankType: "繁殖缸",
+      triggerTreatment: "换水",
+      treatmentNote: "已换水30%，计划3天后复测",
+      originalValue: "0.8",
+      originalUnit: "mg/L",
+      thresholdRange: "≤ 0.5 mg/L",
+      dueDate: formatDate(new Date(now.getTime() + 1 * 86400000)).slice(0, 10),
+      status: "pending",
+      retestResult: null,
+      createdAt: twoDaysAgoStr,
+      handler: "张技师",
+      syncMeta: { ...createSyncMeta("draft"), pendingOperation: "create" },
+    });
+
+    this.saveAlert({
+      id: "offline_demo_alert_retest_2",
+      recordId: "offline_demo_record_2",
+      tankName: "海缸B",
+      tankType: "海水缸",
+      metric: "hardness",
+      metricLabel: "钙硬度",
+      value: "7",
+      unit: "dH",
+      threshold: "8-12",
+      thresholdRange: "8-12 dH",
+      severity: "mild",
+      description: "钙硬度偏低，可能影响珊瑚生长",
+      status: "processed",
+      treatment: "补菌",
+      treatmentNote: "已添加钙镁补充剂",
+      handler: "李工",
+      createdAt: yesterdayStr,
+      processedAt: yesterdayStr,
+      retestTaskId: "offline_demo_retest_2",
+      retestResult: null,
+      isClosed: false,
+      syncMeta: { ...createSyncMeta("synced"), lastSyncAt: yesterdayStr },
+    });
+
+    this.saveRetestTask({
+      id: "offline_demo_retest_2",
+      sourceAlertId: "offline_demo_alert_retest_2",
+      sourceAlertMetric: "hardness",
+      sourceAlertMetricLabel: "钙硬度",
+      tankName: "海缸B",
+      tankType: "海水缸",
+      triggerTreatment: "补菌",
+      treatmentNote: "已添加钙镁补充剂",
+      originalValue: "7",
+      originalUnit: "dH",
+      thresholdRange: "8-12 dH",
+      dueDate: formatDate(new Date(now.getTime() - 1 * 86400000)).slice(0, 10),
+      status: "overdue",
+      retestResult: null,
+      createdAt: yesterdayStr,
+      handler: "李工",
+      syncMeta: { ...createSyncMeta("synced"), lastSyncAt: yesterdayStr, pendingOperation: "update" },
+    });
+
+    this.saveRetestTask({
+      id: "offline_demo_retest_3",
+      sourceAlertId: "offline_demo_alert_completed_1",
+      sourceAlertMetric: "ammonia",
+      sourceAlertMetricLabel: "氨氮",
+      tankName: "草缸A",
+      tankType: "草缸",
+      triggerTreatment: "停喂",
+      treatmentNote: "停喂2天，加强过滤",
+      originalValue: "0.3",
+      originalUnit: "mg/L",
+      thresholdRange: "≤ 0.25 mg/L",
+      dueDate: formatDate(new Date(now.getTime() - 2 * 86400000)).slice(0, 10),
+      status: "completed",
+      retestRecordId: "offline_demo_record_4",
+      retestValue: "0.2",
+      retestResult: "recovered",
+      createdAt: twoDaysAgoStr,
+      completedAt: formatDate(new Date(now.getTime() - 1 * 86400000)),
+      handler: "王师傅",
       syncMeta: { ...createSyncMeta("synced"), lastSyncAt: yesterdayStr },
     });
 

@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   offlineSyncStore,
   syncEngine,
   createSyncMeta,
   type OfflineWaterRecord,
+  type OfflineRetestTask,
+  type OfflineAlert,
 } from "../offlineSync";
 import { SyncBadge } from "./SyncBadge";
 import type { WaterTestFormData, RecordStatus } from "./types";
@@ -85,14 +87,20 @@ function evaluateRecord(form: WaterTestFormData): { status: RecordStatus; note: 
 
 interface WaterTestRecorderProps {
   onRecordCreated?: (record: OfflineWaterRecord) => void;
+  onRetestCompleted?: (result: { completedTasks: OfflineRetestTask[]; updatedAlerts: OfflineAlert[] }) => void;
 }
 
-export function WaterTestRecorder({ onRecordCreated }: WaterTestRecorderProps) {
+export function WaterTestRecorder({ onRecordCreated, onRetestCompleted }: WaterTestRecorderProps) {
   const [formData, setFormData] = useState<WaterTestFormData>(emptyForm);
   const [records, setRecords] = useState<OfflineWaterRecord[]>(() =>
     offlineSyncStore.getWaterRecords()
   );
+  const [retestTasks, setRetestTasks] = useState<OfflineRetestTask[]>(() =>
+    offlineSyncStore.getRetestTasks()
+  );
   const [statusFilter, setStatusFilter] = useState<string>("全部");
+  const [retestNotification, setRetestNotification] = useState<string | null>(null);
+  const notificationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateForm = (key: keyof WaterTestFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
@@ -100,10 +108,19 @@ export function WaterTestRecorder({ onRecordCreated }: WaterTestRecorderProps) {
 
   const refreshRecords = () => {
     setRecords(offlineSyncStore.getWaterRecords());
+    setRetestTasks(offlineSyncStore.getRetestTasks());
   };
 
   useEffect(() => {
     return offlineSyncStore.subscribe(refreshRecords);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (notificationTimerRef.current) {
+        clearTimeout(notificationTimerRef.current);
+      }
+    };
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -171,6 +188,32 @@ export function WaterTestRecorder({ onRecordCreated }: WaterTestRecorderProps) {
         relatedRecordId: record.id,
         syncMeta: record.syncMeta,
       });
+    }
+
+    const retestResult = offlineSyncStore.completeRetestTaskFromRecord(record);
+    if (retestResult.completedTasks.length > 0) {
+      const recoveredCount = retestResult.completedTasks.filter(
+        (t) => t.retestResult === "recovered"
+      ).length;
+      const notRecoveredCount = retestResult.completedTasks.filter(
+        (t) => t.retestResult === "not_recovered"
+      ).length;
+      const messageParts: string[] = [];
+      if (recoveredCount > 0) {
+        messageParts.push(`${recoveredCount} 项异常已恢复正常并闭环`);
+      }
+      if (notRecoveredCount > 0) {
+        messageParts.push(`${notRecoveredCount} 项仍未恢复，持续关注`);
+      }
+      const notification = `📋 复测结果：${messageParts.join("；")}`;
+      setRetestNotification(notification);
+      if (notificationTimerRef.current) {
+        clearTimeout(notificationTimerRef.current);
+      }
+      notificationTimerRef.current = setTimeout(() => {
+        setRetestNotification(null);
+      }, 5000);
+      onRetestCompleted?.(retestResult);
     }
 
     setFormData(emptyForm);
@@ -358,6 +401,20 @@ export function WaterTestRecorder({ onRecordCreated }: WaterTestRecorderProps) {
           </button>
         </div>
       </form>
+
+      {retestNotification && (
+        <div className="retest-notification">
+          <div className="retest-notification-content">
+            {retestNotification}
+          </div>
+          <button
+            className="retest-notification-close"
+            onClick={() => setRetestNotification(null)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="record-filter-bar">
         <span className="filter-label">同步状态筛选：</span>

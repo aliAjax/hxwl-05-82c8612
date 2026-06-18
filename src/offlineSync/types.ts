@@ -10,6 +10,7 @@ export type EntityType =
   | "waterChangePlan"
   | "alert"
   | "maintenanceTask"
+  | "retestTask"
   | "tank";
 
 export type SyncOperation = "create" | "update" | "delete";
@@ -79,16 +80,59 @@ export interface OfflineAlert {
   tankId?: string;
   tankType: string;
   metric: string;
+  metricLabel?: string;
   value: string;
+  unit?: string;
   threshold: string;
+  thresholdRange?: string;
   severity: "severe" | "mild";
   description: string;
   status: "pending" | "processed";
-  treatment?: "waterChange" | "medication" | "temperatureAdjust" | "other";
+  treatment?: OfflineTreatmentAction;
   treatmentNote?: string;
   handler?: string;
   createdAt: string;
   processedAt?: string;
+  retestTaskId?: string;
+  retestResult?: OfflineRetestResult;
+  isClosed?: boolean;
+  closedAt?: string;
+  syncMeta: SyncMeta;
+}
+
+export type OfflineRetestTaskStatus = "pending" | "completed" | "overdue";
+
+export type OfflineRetestResult = "recovered" | "not_recovered" | null;
+
+export type OfflineTreatmentAction =
+  | "复测"
+  | "换水"
+  | "停喂"
+  | "补菌"
+  | "温度调整"
+  | "其他";
+
+export interface OfflineRetestTask {
+  id: string;
+  sourceAlertId: string;
+  sourceAlertMetric: string;
+  sourceAlertMetricLabel: string;
+  tankName: string;
+  tankId?: string;
+  tankType: string;
+  triggerTreatment: OfflineTreatmentAction;
+  treatmentNote?: string;
+  originalValue: string;
+  originalUnit: string;
+  thresholdRange: string;
+  dueDate: string;
+  status: OfflineRetestTaskStatus;
+  retestRecordId?: string;
+  retestValue?: string;
+  retestResult: OfflineRetestResult;
+  createdAt: string;
+  completedAt?: string;
+  handler?: string;
   syncMeta: SyncMeta;
 }
 

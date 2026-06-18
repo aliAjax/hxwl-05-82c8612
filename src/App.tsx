@@ -38,6 +38,7 @@ import {
   AlertReminderPanel,
   SyncControlPanel,
   RetestTaskPanel,
+  OfflineRetestPanel,
 } from "./offlineMaintenance";
 import { createSyncMeta, offlineSyncStore } from "./offlineSync";
 
@@ -1676,6 +1677,8 @@ function App() {
         </div>
 
         <AlertReminderPanel />
+
+        <OfflineRetestPanel />
       </section>
 
       <ImportWaterRecordsModal
