@@ -90,6 +90,9 @@ class SyncEngine {
       case "maintenanceTask":
         offlineSyncStore.updateTaskSyncStatus(entityId, status, error, conflictData);
         break;
+      case "retestTask":
+        offlineSyncStore.updateRetestTaskSyncStatus(entityId, status, error, conflictData);
+        break;
       case "tank":
         break;
     }

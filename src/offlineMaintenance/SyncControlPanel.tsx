@@ -13,6 +13,7 @@ const ENTITY_TYPE_LABEL: Record<EntityType, string> = {
   waterChangePlan: "换水计划",
   alert: "异常提醒",
   maintenanceTask: "维护任务",
+  retestTask: "复测任务",
   tank: "鱼缸档案",
 };
 
