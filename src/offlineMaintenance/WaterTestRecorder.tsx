@@ -9,7 +9,14 @@ import {
 } from "../offlineSync";
 import { SyncBadge } from "./SyncBadge";
 import type { WaterTestFormData, RecordStatus } from "./types";
-import { METRIC_RANGES } from "./types";
+import {
+  evaluateRecordStatus,
+  RULE_METRICS,
+  RULE_METRIC_LABELS,
+  RULE_METRIC_UNITS,
+  getMetricRule,
+} from "../ruleConfig";
+import type { RuleMetric } from "../ruleConfig";
 
 const emptyForm: WaterTestFormData = {
   tankName: "",
@@ -23,67 +30,6 @@ const emptyForm: WaterTestFormData = {
   waterChange: "",
   note: "",
 };
-
-function evaluateMetric(
-  key: keyof typeof METRIC_RANGES,
-  raw: string
-): RecordStatus {
-  const value = parseFloat(raw);
-  if (isNaN(value)) return "稳定";
-  const range = METRIC_RANGES[key];
-  if (value < range.watch[0] || value > range.watch[1]) return "异常";
-  if (value < range.ok[0] || value > range.ok[1]) return "关注";
-  return "稳定";
-}
-
-function evaluateRecord(form: WaterTestFormData): { status: RecordStatus; note: string } {
-  const metricKeys = Object.keys(METRIC_RANGES) as (keyof typeof METRIC_RANGES)[];
-  const issues: { key: keyof typeof METRIC_RANGES; status: RecordStatus }[] = [];
-  let overall: RecordStatus = "稳定";
-
-  for (const key of metricKeys) {
-    const raw = form[key];
-    if (!raw.trim()) continue;
-    const st = evaluateMetric(key, raw);
-    if (st !== "稳定") {
-      issues.push({ key, status: st });
-    }
-    if (st === "异常") overall = "异常";
-    else if (st === "关注" && overall !== "异常") overall = "关注";
-  }
-
-  let note = form.note.trim();
-  if (issues.length === 0 && !note) {
-    note = "各项指标正常，继续保持";
-  } else if (issues.length > 0) {
-    const dangerItems = issues.filter((i) => i.status === "异常");
-    const watchItems = issues.filter((i) => i.status === "关注");
-    const parts: string[] = [];
-    if (dangerItems.length > 0) {
-      parts.push(
-        dangerItems
-          .map((i) => {
-            const r = METRIC_RANGES[i.key];
-            return `${r.label}${form[i.key]}${r.unit}异常`;
-          })
-          .join("、")
-      );
-    }
-    if (watchItems.length > 0) {
-      parts.push(
-        watchItems
-          .map((i) => `${METRIC_RANGES[i.key].label}${form[i.key]}需关注`)
-          .join("、")
-      );
-    }
-    const issueStr = parts.join("；");
-    note = note ? `${issueStr}；${note}` : issueStr;
-    if (dangerItems.length > 0) {
-      note += "，建议立即处理";
-    }
-  }
-  return { status: overall, note };
-}
 
 interface WaterTestRecorderProps {
   onRecordCreated?: (record: OfflineWaterRecord) => void;
@@ -129,15 +75,25 @@ export function WaterTestRecorder({ onRecordCreated, onRetestCompleted }: WaterT
       alert("请填写鱼缸名称");
       return;
     }
-    const hasAnyMetric = (Object.keys(METRIC_RANGES) as (keyof typeof METRIC_RANGES)[]).some(
-      (k) => formData[k].trim() !== ""
+    const hasAnyMetric = RULE_METRICS.some(
+      (k) => formData[k as keyof typeof formData]?.trim() !== ""
     );
     if (!hasAnyMetric && !formData.waterChange.trim()) {
       alert("请至少填写一项水质指标或换水量");
       return;
     }
 
-    const { status, note } = evaluateRecord(formData);
+    const { status, note: baseNote } = evaluateRecordStatus({
+      ph: formData.ph,
+      ammonia: formData.ammonia,
+      nitrite: formData.nitrite,
+      nitrate: formData.nitrate,
+      hardness: formData.hardness,
+      temperature: formData.temperature,
+      waterChange: formData.waterChange,
+    });
+    const userNote = formData.note.trim();
+    const note = userNote ? `${baseNote}；${userNote}` : baseNote;
     const isOnline = offlineSyncStore.isNetworkOnline();
 
     const record = offlineSyncStore.saveWaterRecord({
@@ -281,10 +237,12 @@ export function WaterTestRecorder({ onRecordCreated, onRetestCompleted }: WaterT
 
   const buildMetricSummary = (metrics: OfflineWaterRecord["metrics"]) => {
     const parts: string[] = [];
-    (Object.keys(METRIC_RANGES) as (keyof typeof METRIC_RANGES)[]).forEach((k) => {
-      if (metrics[k].trim()) {
-        const r = METRIC_RANGES[k];
-        parts.push(`${r.label} ${metrics[k]}${r.unit}`);
+    RULE_METRICS.forEach((k) => {
+      const val = metrics[k];
+      if (val && val.trim()) {
+        const label = RULE_METRIC_LABELS[k];
+        const unit = RULE_METRIC_UNITS[k];
+        parts.push(`${label} ${val}${unit}`);
       }
     });
     if (metrics.waterChange.trim()) {

@@ -92,15 +92,19 @@ export interface RetestDelayConfig {
   换水: number;
   停喂: number;
   补菌: number;
+  "温度调整": number;
+  其他: number;
 }
 
-export type TreatmentAction = "换水" | "停喂" | "补菌" | "复测";
+export type TreatmentAction = "换水" | "停喂" | "补菌" | "复测" | "温度调整" | "其他";
 
 export const TREATMENT_ACTIONS: TreatmentAction[] = [
   "换水",
   "停喂",
   "补菌",
   "复测",
+  "温度调整",
+  "其他",
 ];
 
 export interface RuleConfig {

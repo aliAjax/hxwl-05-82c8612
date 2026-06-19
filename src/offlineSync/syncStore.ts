@@ -16,6 +16,8 @@ import type {
   MergeHistoryEntry,
   MergeSource,
 } from "./types";
+import { getRetestDelayConfig, evaluateMetricValue } from "../ruleConfig";
+import type { RuleMetric } from "../ruleConfig";
 
 const STORAGE_KEYS = {
   QUEUE: "hxwl_offline_sync_queue",
@@ -621,15 +623,8 @@ class OfflineSyncStore {
     treatmentNote: string,
     handler: string
   ): { retestTask: OfflineRetestTask; updatedAlert: OfflineAlert } {
-    const dueDaysMap: Record<OfflineTreatmentAction, number> = {
-      "复测": 1,
-      "换水": 3,
-      "停喂": 2,
-      "补菌": 3,
-      "温度调整": 2,
-      "其他": 2,
-    };
-    const dueDays = dueDaysMap[treatment] ?? 2;
+    const retestDelayConfig = getRetestDelayConfig();
+    const dueDays = retestDelayConfig[treatment] ?? 2;
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + dueDays);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -716,26 +711,12 @@ class OfflineSyncStore {
     value: string,
     tankType: string
   ): boolean {
-    const numVal = parseFloat(value);
-    if (isNaN(numVal)) return false;
-
-    const isSaltwater = tankType.includes("海") || tankType.includes("海水");
-    const isBreeding = tankType.includes("繁殖");
-
-    const thresholds: Record<string, { min?: number; max?: number }> = {
-      ph: { min: 6.5, max: 8.5 },
-      ammonia: { max: 0.25 },
-      nitrite: { max: 0.3 },
-      nitrate: { max: isBreeding ? 20 : 40 },
-      hardness: { min: 4, max: isSaltwater ? 12 : 10 },
-      temperature: { min: 22, max: isSaltwater ? 27 : 28 },
-    };
-
-    const t = thresholds[metric];
-    if (!t) return true;
-    if (t.min !== undefined && numVal < t.min) return false;
-    if (t.max !== undefined && numVal > t.max) return false;
-    return true;
+    const result = evaluateMetricValue(
+      tankType,
+      metric as RuleMetric,
+      value
+    );
+    return result?.status === "ok";
   }
 
   getSyncStats(): SyncStats {

@@ -112,6 +112,8 @@ const DEFAULT_RETEST_DELAY_CONFIG: RetestDelayConfig = {
   换水: 3,
   停喂: 2,
   补菌: 3,
+  "温度调整": 2,
+  其他: 2,
 };
 
 export function getDefaultRuleConfig(): RuleConfig {
@@ -241,9 +243,9 @@ export function evaluateMetricValue(
 
   if (value < watchMin || value > watchMax) {
     return {
-      status: "severe",
+      status: "mild",
       rule,
-      recordStatus: "异常",
+      recordStatus: "关注",
     };
   }
 
@@ -383,7 +385,7 @@ export function evaluateDataPoint(
   const isZeroRange = rule.ok[0] === 0 && rule.ok[1] === 0;
 
   if (value < rule.severe[0] || value > rule.severe[1]) return "danger";
-  if (value < rule.watch[0] || value > rule.watch[1]) return "danger";
+  if (value < rule.watch[0] || value > rule.watch[1]) return "warning";
 
   if (isZeroRange) {
     if (value <= 0) return "normal";
