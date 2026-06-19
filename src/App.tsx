@@ -229,9 +229,12 @@ function App() {
     alertService.processAlert(alertId, treatment, treatmentNote, handler);
   };
 
-  const handleWaterRecordSubmit = (e: React.FormEvent) => {
+  const handleWaterRecordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    waterRecordService.submitWaterRecord();
+    const result = await waterRecordService.submitWaterRecord();
+    if (!result.success && result.error) {
+      alert(result.error);
+    }
   };
 
   const displayRecords = useMemo(() => {
