@@ -1211,7 +1211,7 @@ class OfflineSyncStore {
       }
     }
 
-    const demoTask = this.getTasks().find(t => t.tankName === "海缸B" && t.type === "alertFollowUp");
+    const demoTask = this.getTasks().find(t => t.id === "offline_demo_task_conflict_1");
     if (!demoTask) {
       this.saveTask({
         id: "offline_demo_task_conflict_1",
