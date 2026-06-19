@@ -44,6 +44,8 @@ import {
   OfflineRetestPanel,
 } from "./offlineMaintenance";
 import { createSyncMeta, offlineSyncStore } from "./offlineSync";
+import { auditLogger } from "./auditLog";
+import { AuditTimelinePanel } from "./auditLog/AuditTimelinePanel";
 
 const project = {
   "id": "hxwl-05",
@@ -287,6 +289,10 @@ function App() {
         allSavedAlerts.push(...savedAlerts);
       }
     }
+
+    await auditLogger.logImport("waterRecord", newRecords.length, {
+      detail: `CSV导入${newRecords.length}条水质记录，${allSavedAlerts.length}条异常提醒`,
+    });
 
     setWaterRecords((prev) => {
       const combined = [...newRecords, ...prev];
@@ -1053,6 +1059,8 @@ function App() {
         onJumpToAllPlans={handleJumpToAllPlans}
         onJumpToAllRetestTasks={handleJumpToAllRetestTasks}
       />
+
+      <AuditTimelinePanel tanks={tanks} />
 
       <section className="tank-profiles panel">
         <div className="section-heading">

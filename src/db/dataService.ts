@@ -4,6 +4,8 @@ import type { TankProfile, WaterRecord, WaterChangePlan, AppData, Customer } fro
 import type { AlertItem, RetestTask, TreatmentAction, AlertMetric, AlertMetricValues } from "../alertCenter/types";
 import { getRetestDelayConfig, evaluateRecordStatus as evaluateRecordStatusFromRule } from "../ruleConfig/ruleEngine";
 import { generateAlertsFromRecord } from "../alertCenter/AlertCenter";
+import { auditLogger } from "../auditLog/auditLogger";
+import { auditLogStore } from "../auditLog/auditLogStore";
 
 export class DataService {
   private initialized = false;
@@ -11,6 +13,7 @@ export class DataService {
   async init(): Promise<void> {
     if (this.initialized) return;
     await db.init();
+    await auditLogStore.init();
 
     if (!hasSeedDataBeenLoaded()) {
       const existingData = await this.getAllData();
@@ -90,15 +93,24 @@ export class DataService {
       id: Date.now().toString(),
     };
     await db.add("tanks", newTank);
+    await auditLogger.logCreate("tank", newTank as unknown as Record<string, unknown>);
     return newTank;
   }
 
   async updateTank(tank: TankProfile): Promise<void> {
+    const before = await db.get<TankProfile>("tanks", tank.id);
     await db.put("tanks", tank);
+    if (before) {
+      await auditLogger.logUpdate("tank", tank.id, before as unknown as Record<string, unknown>, tank as unknown as Record<string, unknown>);
+    }
   }
 
   async deleteTank(id: string): Promise<void> {
+    const before = await db.get<TankProfile>("tanks", id);
     await db.delete("tanks", id);
+    if (before) {
+      await auditLogger.logDelete("tank", before as unknown as Record<string, unknown>);
+    }
   }
 
   async getWaterRecords(): Promise<WaterRecord[]> {
@@ -117,15 +129,24 @@ export class DataService {
       id: Date.now().toString(),
     };
     await db.add("waterRecords", newRecord);
+    await auditLogger.logCreate("waterRecord", newRecord as unknown as Record<string, unknown>);
     return newRecord;
   }
 
   async updateWaterRecord(record: WaterRecord): Promise<void> {
+    const before = await db.get<WaterRecord>("waterRecords", record.id);
     await db.put("waterRecords", record);
+    if (before) {
+      await auditLogger.logUpdate("waterRecord", record.id, before as unknown as Record<string, unknown>, record as unknown as Record<string, unknown>);
+    }
   }
 
   async deleteWaterRecord(id: string): Promise<void> {
+    const before = await db.get<WaterRecord>("waterRecords", id);
     await db.delete("waterRecords", id);
+    if (before) {
+      await auditLogger.logDelete("waterRecord", before as unknown as Record<string, unknown>);
+    }
   }
 
   async getWaterChangePlans(): Promise<WaterChangePlan[]> {
@@ -150,15 +171,24 @@ export class DataService {
       createdAt,
     };
     await db.add("waterChangePlans", newPlan);
+    await auditLogger.logCreate("waterChangePlan", newPlan as unknown as Record<string, unknown>);
     return newPlan;
   }
 
   async updateWaterChangePlan(plan: WaterChangePlan): Promise<void> {
+    const before = await db.get<WaterChangePlan>("waterChangePlans", plan.id);
     await db.put("waterChangePlans", plan);
+    if (before) {
+      await auditLogger.logUpdate("waterChangePlan", plan.id, before as unknown as Record<string, unknown>, plan as unknown as Record<string, unknown>);
+    }
   }
 
   async deleteWaterChangePlan(id: string): Promise<void> {
+    const before = await db.get<WaterChangePlan>("waterChangePlans", id);
     await db.delete("waterChangePlans", id);
+    if (before) {
+      await auditLogger.logDelete("waterChangePlan", before as unknown as Record<string, unknown>);
+    }
   }
 
   async completeWaterChangePlan(planId: string): Promise<WaterChangePlan> {
@@ -166,6 +196,8 @@ export class DataService {
     if (!plan) {
       throw new Error(`Plan not found: ${planId}`);
     }
+
+    const beforePlan = { ...plan };
 
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -176,6 +208,9 @@ export class DataService {
       completedAt,
     };
     await db.put("waterChangePlans", completedPlan);
+    await auditLogger.logComplete("waterChangePlan", planId, beforePlan as unknown as Record<string, unknown>, completedPlan as unknown as Record<string, unknown>, {
+      detail: `完成换水计划「${plan.tankName}」`,
+    });
 
     const cycleDays = parseInt(plan.cycleDays) || 7;
     const nextDate = new Date(now);
@@ -190,6 +225,9 @@ export class DataService {
       createdAt: completedAt,
     };
     await db.add("waterChangePlans", nextPlan);
+    await auditLogger.logCreate("waterChangePlan", nextPlan as unknown as Record<string, unknown>, {
+      detail: `自动生成下一轮换水计划「${plan.tankName}」`,
+    });
 
     return nextPlan;
   }
@@ -209,6 +247,7 @@ export class DataService {
       id: `${alert.recordId}-${alert.metric}-${Date.now()}`,
     };
     await db.add("alerts", newAlert);
+    await auditLogger.logCreate("alert", newAlert as unknown as Record<string, unknown>);
     return newAlert;
   }
 
@@ -236,6 +275,8 @@ export class DataService {
       throw new Error(`Alert not found: ${alertId}`);
     }
 
+    const beforeAlert = { ...alert };
+
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
     const processedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -249,6 +290,10 @@ export class DataService {
       processedAt,
     };
     await db.put("alerts", updatedAlert);
+    await auditLogger.logProcess("alert", alertId, beforeAlert as unknown as Record<string, unknown>, updatedAlert as unknown as Record<string, unknown>, {
+      operator: handler,
+      detail: `处理提醒: ${treatment}${treatmentNote ? ` - ${treatmentNote}` : ""}`,
+    });
     return updatedAlert;
   }
 
@@ -301,6 +346,9 @@ export class DataService {
       retestResult: null,
     };
     await db.add("retestTasks", newTask);
+    await auditLogger.logCreate("retestTask", newTask as unknown as Record<string, unknown>, {
+      detail: `创建复测任务: ${task.sourceAlertMetricLabel}`,
+    });
     return newTask;
   }
 
@@ -361,6 +409,8 @@ export class DataService {
       throw new Error(`Retest task not found: ${taskId}`);
     }
 
+    const beforeTask = { ...task };
+
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
     const completedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -374,10 +424,14 @@ export class DataService {
       completedAt,
     };
     await this.updateRetestTask(updatedTask);
+    await auditLogger.logComplete("retestTask", taskId, beforeTask as unknown as Record<string, unknown>, updatedTask as unknown as Record<string, unknown>, {
+      detail: `复测${isRecovered ? "已恢复" : "未恢复"}: ${retestValue}`,
+    });
 
     const alert = await db.get<AlertItem>("alerts", task.sourceAlertId);
     let updatedAlert: AlertItem = alert ?? { id: task.sourceAlertId } as AlertItem;
     if (alert) {
+      const beforeAlert = { ...alert };
       updatedAlert = {
         ...alert,
         retestResult: isRecovered ? "recovered" : "not_recovered",
@@ -385,6 +439,9 @@ export class DataService {
         closedAt: isRecovered ? completedAt : undefined,
       };
       await this.updateAlert(updatedAlert);
+      await auditLogger.logUpdate("alert", alert.id, beforeAlert as unknown as Record<string, unknown>, updatedAlert as unknown as Record<string, unknown>, {
+        detail: `复测结果更新提醒: ${isRecovered ? "已恢复" : "未恢复"}`,
+      });
     }
 
     return { task: updatedTask, alert: updatedAlert };
@@ -432,6 +489,7 @@ export class DataService {
   }
 
   async clearAllData(): Promise<AppData> {
+    await auditLogger.logClearAll();
     await db.clearAll();
     markSeedDataAsLoaded();
     this.initialized = true;
@@ -439,6 +497,7 @@ export class DataService {
   }
 
   async resetToSeedData(): Promise<AppData> {
+    await auditLogger.logResetSeed();
     await db.clearAll();
     await this.loadSeedData();
     markSeedDataAsLoaded();

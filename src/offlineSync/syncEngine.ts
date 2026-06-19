@@ -7,6 +7,8 @@ import type {
   MergeFieldChoice,
   MergeSource,
 } from "./types";
+import { auditLogger } from "../auditLog/auditLogger";
+import type { AuditEntityType } from "../auditLog/types";
 
 type SyncProgressCallback = (
   processed: number,
@@ -102,6 +104,16 @@ class SyncEngine {
     }
   }
 
+  private getEntityInfoFromData(data: unknown): { tankId?: string; tankName?: string; entityName?: string } {
+    if (!data || typeof data !== "object") return {};
+    const d = data as Record<string, unknown>;
+    return {
+      tankId: d.tankId as string | undefined,
+      tankName: d.tankName as string | undefined,
+      entityName: (d.name || d.tankName || d.title || "") as string,
+    };
+  }
+
   async syncAll(onProgress?: SyncProgressCallback): Promise<{
     total: number;
     succeeded: number;
@@ -139,6 +151,12 @@ class SyncEngine {
           item.entityId,
           "synced"
         );
+        const info = this.getEntityInfoFromData(item.data);
+        auditLogger.logSyncSuccess(item.entityType as AuditEntityType, item.entityId, {
+          ...info,
+          syncQueueItemId: item.id,
+          detail: `${item.operation}同步成功`,
+        }).catch(() => {});
         succeeded++;
       } else if (outcome.conflict) {
         offlineSyncStore.updateQueueItem(item.id, {
@@ -154,6 +172,14 @@ class SyncEngine {
           undefined,
           outcome.conflict
         );
+        const info = this.getEntityInfoFromData(item.data);
+        auditLogger.logConflictDetected(item.entityType as AuditEntityType, item.entityId, {
+          ...info,
+          syncQueueItemId: item.id,
+          conflictReason: outcome.conflict.conflictReason,
+          beforeSnapshot: outcome.conflict.localSnapshot as Record<string, unknown> | undefined,
+          afterSnapshot: outcome.conflict.serverSnapshot as Record<string, unknown> | undefined,
+        }).catch(() => {});
         conflicts++;
       } else {
         const newRetryCount = item.retryCount + 1;
@@ -169,6 +195,13 @@ class SyncEngine {
             "failed",
             outcome.error
           );
+          const info = this.getEntityInfoFromData(item.data);
+          auditLogger.logSyncFailure(item.entityType as AuditEntityType, item.entityId, {
+            ...info,
+            syncQueueItemId: item.id,
+            detail: `${item.operation}同步失败(重试${newRetryCount}次): ${outcome.error}`,
+            conflictReason: outcome.error,
+          }).catch(() => {});
         } else {
           offlineSyncStore.updateQueueItem(item.id, {
             status: "queued",
@@ -181,6 +214,13 @@ class SyncEngine {
             "pending",
             outcome.error
           );
+          const info = this.getEntityInfoFromData(item.data);
+          auditLogger.logSyncFailure(item.entityType as AuditEntityType, item.entityId, {
+            ...info,
+            syncQueueItemId: item.id,
+            detail: `${item.operation}同步失败(第${newRetryCount}次重试): ${outcome.error}`,
+            conflictReason: outcome.error,
+          }).catch(() => {});
         }
         failed++;
       }
@@ -208,6 +248,12 @@ class SyncEngine {
     if (outcome.success) {
       offlineSyncStore.removeFromQueue(item.id);
       this.updateEntitySyncStatus(item.entityType, item.entityId, "synced");
+      const info = this.getEntityInfoFromData(item.data);
+      auditLogger.logSyncSuccess(item.entityType as AuditEntityType, item.entityId, {
+        ...info,
+        syncQueueItemId: item.id,
+        detail: `${item.operation}同步成功`,
+      }).catch(() => {});
       this.isSyncing = false;
       return true;
     }
@@ -226,6 +272,14 @@ class SyncEngine {
         undefined,
         outcome.conflict
       );
+      const info = this.getEntityInfoFromData(item.data);
+      auditLogger.logConflictDetected(item.entityType as AuditEntityType, item.entityId, {
+        ...info,
+        syncQueueItemId: item.id,
+        conflictReason: outcome.conflict.conflictReason,
+        beforeSnapshot: outcome.conflict.localSnapshot as Record<string, unknown> | undefined,
+        afterSnapshot: outcome.conflict.serverSnapshot as Record<string, unknown> | undefined,
+      }).catch(() => {});
     } else {
       const newRetryCount = item.retryCount + 1;
       if (newRetryCount >= 3) {
@@ -283,6 +337,13 @@ class SyncEngine {
         mergeSource,
         now
       );
+      const info = this.getEntityInfoFromData(item.data);
+      auditLogger.logConflictResolved(item.entityType as AuditEntityType, item.entityId, {
+        ...info,
+        syncQueueItemId: item.id,
+        mergeSource: "local",
+        detail: `冲突解决: 保留本地版本`,
+      }).catch(() => {});
       return true;
     }
 
@@ -297,6 +358,13 @@ class SyncEngine {
         mergeSource,
         now
       );
+      const info = this.getEntityInfoFromData(item.data);
+      auditLogger.logConflictResolved(item.entityType as AuditEntityType, item.entityId, {
+        ...info,
+        syncQueueItemId: item.id,
+        mergeSource: "server",
+        detail: `冲突解决: 采用服务器版本`,
+      }).catch(() => {});
       return true;
     }
 
@@ -342,6 +410,14 @@ class SyncEngine {
       mergedAt: now,
       conflictReason: item.errorMessage || "数据冲突",
     });
+
+    const info = this.getEntityInfoFromData(item.data);
+    auditLogger.logConflictResolved(item.entityType as AuditEntityType, item.entityId, {
+      ...info,
+      syncQueueItemId: item.id,
+      mergeSource: "manual",
+      detail: `冲突解决: 人工合并(字段数${fieldChoices.length})`,
+    }).catch(() => {});
 
     return true;
   }

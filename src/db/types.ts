@@ -77,7 +77,7 @@ export interface AppData {
   retestTasks: RetestTask[];
 }
 
-export type StoreName = "customers" | "tanks" | "waterRecords" | "waterChangePlans" | "alerts" | "retestTasks";
+export type StoreName = "customers" | "tanks" | "waterRecords" | "waterChangePlans" | "alerts" | "retestTasks" | "auditLogs";
 
 export const STORE_NAMES: StoreName[] = [
   "customers",
@@ -86,4 +86,5 @@ export const STORE_NAMES: StoreName[] = [
   "waterChangePlans",
   "alerts",
   "retestTasks",
+  "auditLogs",
 ];
