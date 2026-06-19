@@ -13,6 +13,7 @@ import type {
   WaterRecord,
   TankProfile,
   WaterChangePlan,
+  CustomThresholds,
 } from "../db/types";
 import type { AlertItem, TankType, AlertMetric } from "../alertCenter/types";
 import {
@@ -74,7 +75,8 @@ function getMetricValue(record: WaterRecord, metric: AlertMetric): number | null
 function detectContinuousRise(
   sortedRecords: WaterRecord[],
   metric: AlertMetric,
-  tankType: TankType | string
+  tankType: TankType | string,
+  customThresholds?: CustomThresholds
 ): RiskFactor | null {
   const values: { date: Date; value: number }[] = [];
   for (const rec of sortedRecords) {
@@ -99,7 +101,7 @@ function detectContinuousRise(
     }
   }
 
-  const threshold = getMetricThreshold(tankType, metric);
+  const threshold = getMetricThreshold(tankType, metric, customThresholds);
   const rangeSpan = threshold.watch[1] - threshold.watch[0] || 1;
   const relativeRise = totalRise / rangeSpan;
 
@@ -129,7 +131,8 @@ function detectContinuousRise(
 function detectRapidFluctuation(
   sortedRecords: WaterRecord[],
   metric: AlertMetric,
-  tankType: TankType | string
+  tankType: TankType | string,
+  customThresholds?: CustomThresholds
 ): RiskFactor | null {
   const values: { date: Date; value: number }[] = [];
   for (const rec of sortedRecords) {
@@ -153,7 +156,7 @@ function detectRapidFluctuation(
     }
   }
 
-  const threshold = getMetricThreshold(tankType, metric);
+  const threshold = getMetricThreshold(tankType, metric, customThresholds);
   const rangeSpan = threshold.watch[1] - threshold.watch[0] || 1;
   const maxVal = Math.max(...recent.map((v) => v.value));
   const minVal = Math.min(...recent.map((v) => v.value));
@@ -256,7 +259,8 @@ function detectNoWaterChangeLong(
 function detectRetestStillAbnormal(
   sortedRecords: WaterRecord[],
   alerts: AlertItem[],
-  tankType: TankType | string
+  tankType: TankType | string,
+  customThresholds?: CustomThresholds
 ): RiskFactor[] {
   const factors: RiskFactor[] = [];
   if (sortedRecords.length < 2) return factors;
@@ -275,7 +279,8 @@ function detectRetestStillAbnormal(
       const evalResult = evaluateMetricValue(
         tankType,
         metric,
-        String(v)
+        String(v),
+        customThresholds
       );
       if (evalResult && evalResult.status !== "ok") {
         abnormalRecords.push(rec);
@@ -336,7 +341,8 @@ function detectRetestStillAbnormal(
 
 function detectSingleThresholdAbnormalities(
   latestRecord: WaterRecord | undefined,
-  tankType: TankType | string
+  tankType: TankType | string,
+  customThresholds?: CustomThresholds
 ): RiskFactor[] {
   const factors: RiskFactor[] = [];
   if (!latestRecord) return factors;
@@ -345,7 +351,7 @@ function detectSingleThresholdAbnormalities(
     const raw = latestRecord.metrics[metric];
     if (!raw || !raw.trim()) continue;
 
-    const evalResult = evaluateMetricValue(tankType, metric, raw);
+    const evalResult = evaluateMetricValue(tankType, metric, raw, customThresholds);
     if (!evalResult || evalResult.status === "ok") continue;
 
     const isSevere = evalResult.status === "severe";
@@ -512,7 +518,8 @@ function generateLowRiskReasons(
         const evalResult = evaluateMetricValue(
           tank.tankType as TankType | string,
           metric,
-          raw
+          raw,
+          tank.customThresholds
         );
         if (evalResult && evalResult.status !== "ok") {
           allMetricsOk = false;
@@ -589,12 +596,14 @@ function generateLowRiskReasons(
         const hasRise = detectContinuousRise(
           sortedRecords,
           metric,
-          tank.tankType as TankType | string
+          tank.tankType as TankType | string,
+          tank.customThresholds
         );
         const hasFluct = detectRapidFluctuation(
           sortedRecords,
           metric,
-          tank.tankType as TankType | string
+          tank.tankType as TankType | string,
+          tank.customThresholds
         );
         if (hasRise || hasFluct) {
           hasStableTrend = false;
@@ -640,24 +649,44 @@ export function assessTankRisk(context: TankRiskContext): RiskAssessmentResult {
   const sortedRecords = getSortedRecords(records);
   const latestRecord = sortedRecords[sortedRecords.length - 1];
   const tankType = tank.tankType as TankType | string;
+  const customThresholds = tank.customThresholds;
 
   const allFactors: RiskFactor[] = [];
 
-  const singleFactors = detectSingleThresholdAbnormalities(latestRecord, tankType);
+  const singleFactors = detectSingleThresholdAbnormalities(
+    latestRecord,
+    tankType,
+    customThresholds
+  );
   allFactors.push(...singleFactors);
 
   for (const metric of ALERT_METRIC_KEYS) {
-    const riseFactor = detectContinuousRise(sortedRecords, metric, tankType);
+    const riseFactor = detectContinuousRise(
+      sortedRecords,
+      metric,
+      tankType,
+      customThresholds
+    );
     if (riseFactor) allFactors.push(riseFactor);
 
-    const fluctFactor = detectRapidFluctuation(sortedRecords, metric, tankType);
+    const fluctFactor = detectRapidFluctuation(
+      sortedRecords,
+      metric,
+      tankType,
+      customThresholds
+    );
     if (fluctFactor) allFactors.push(fluctFactor);
   }
 
   const waterChangeFactor = detectNoWaterChangeLong(sortedRecords, plans);
   if (waterChangeFactor) allFactors.push(waterChangeFactor);
 
-  const retestFactors = detectRetestStillAbnormal(sortedRecords, alerts, tankType);
+  const retestFactors = detectRetestStillAbnormal(
+    sortedRecords,
+    alerts,
+    tankType,
+    customThresholds
+  );
   allFactors.push(...retestFactors);
 
   const capacityFactor = detectCapacitySensitivity(tank, singleFactors);
