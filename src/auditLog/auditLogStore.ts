@@ -3,6 +3,7 @@ import type { AuditLogEntry, AuditEntityType, AuditOperation } from "./types";
 
 class AuditLogStore {
   private sequenceCounter = 0;
+  private listeners: Set<() => void> = new Set();
 
   async init(): Promise<void> {
     const existing = await db.getAll<AuditLogEntry>("auditLogs");
@@ -14,6 +15,15 @@ class AuditLogStore {
   private nextSequence(): number {
     this.sequenceCounter++;
     return this.sequenceCounter;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notifyListeners() {
+    this.listeners.forEach((listener) => listener());
   }
 
   async addLog(entry: Omit<AuditLogEntry, "id" | "createdAt" | "sequence">): Promise<AuditLogEntry> {
@@ -29,6 +39,7 @@ class AuditLogStore {
     };
 
     await db.add("auditLogs", fullEntry);
+    this.notifyListeners();
     return fullEntry;
   }
 
@@ -86,6 +97,7 @@ class AuditLogStore {
   async clearLogs(): Promise<void> {
     await db.clear("auditLogs");
     this.sequenceCounter = 0;
+    this.notifyListeners();
   }
 
   async getLogCount(): Promise<number> {

@@ -209,6 +209,10 @@ export function AuditTimelinePanel({ tanks }: AuditTimelinePanelProps) {
   }, [loadLogs]);
 
   useEffect(() => {
+    return auditLogStore.subscribe(loadLogs);
+  }, [loadLogs]);
+
+  useEffect(() => {
     setCurrentPage(1);
   }, [selectedTankId, entityTypeFilter, operationFilter]);
 

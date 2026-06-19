@@ -45,6 +45,13 @@ const formatDate = (d: Date): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+type SyncAuditedEntity = {
+  id: string;
+  tankId?: string;
+  tankName?: string;
+  syncMeta: SyncMeta;
+};
+
 class OfflineSyncStore {
   private isOnline = true;
   private listeners: Set<() => void> = new Set();
@@ -78,6 +85,30 @@ class OfflineSyncStore {
 
   private notifyListeners() {
     this.listeners.forEach((l) => l());
+  }
+
+  private logSyncStatusChange<T extends SyncAuditedEntity>(
+    entityType: AuditEntityType,
+    before: T,
+    after: T
+  ) {
+    if (JSON.stringify(before.syncMeta) === JSON.stringify(after.syncMeta)) {
+      return;
+    }
+
+    auditLogger
+      .logUpdate(
+        entityType,
+        after.id,
+        before as unknown as Record<string, unknown>,
+        after as unknown as Record<string, unknown>,
+        {
+          tankId: after.tankId || before.tankId,
+          tankName: after.tankName || before.tankName,
+          detail: `同步状态流转：${before.syncMeta.syncStatus} → ${after.syncMeta.syncStatus}`,
+        }
+      )
+      .catch(() => {});
   }
 
   isNetworkOnline(): boolean {
@@ -258,6 +289,7 @@ class OfflineSyncStore {
     const records = this.getWaterRecords();
     const idx = records.findIndex((r) => r.id === id);
     if (idx !== -1) {
+      const before = { ...records[idx], syncMeta: { ...records[idx].syncMeta } };
       records[idx].syncMeta = {
         ...records[idx].syncMeta,
         syncStatus: status,
@@ -268,6 +300,8 @@ class OfflineSyncStore {
         ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
         ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
+      const after = { ...records[idx], syncMeta: { ...records[idx].syncMeta } };
+      this.logSyncStatusChange("waterRecord", before, after);
       this.saveToStorage(
         STORAGE_KEYS.WATER_RECORDS,
         JSON.stringify(records)
@@ -372,6 +406,7 @@ class OfflineSyncStore {
     const plans = this.getWaterPlans();
     const idx = plans.findIndex((p) => p.id === id);
     if (idx !== -1) {
+      const before = { ...plans[idx], syncMeta: { ...plans[idx].syncMeta } };
       plans[idx].syncMeta = {
         ...plans[idx].syncMeta,
         syncStatus: status,
@@ -382,6 +417,8 @@ class OfflineSyncStore {
         ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
         ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
+      const after = { ...plans[idx], syncMeta: { ...plans[idx].syncMeta } };
+      this.logSyncStatusChange("waterChangePlan", before, after);
       this.saveToStorage(STORAGE_KEYS.WATER_PLANS, JSON.stringify(plans));
       this.notifyListeners();
     }
@@ -502,6 +539,7 @@ class OfflineSyncStore {
     const alerts = this.getAlerts();
     const idx = alerts.findIndex((a) => a.id === id);
     if (idx !== -1) {
+      const before = { ...alerts[idx], syncMeta: { ...alerts[idx].syncMeta } };
       alerts[idx].syncMeta = {
         ...alerts[idx].syncMeta,
         syncStatus: status,
@@ -512,6 +550,8 @@ class OfflineSyncStore {
         ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
         ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
+      const after = { ...alerts[idx], syncMeta: { ...alerts[idx].syncMeta } };
+      this.logSyncStatusChange("alert", before, after);
       this.saveToStorage(STORAGE_KEYS.ALERTS, JSON.stringify(alerts));
       this.notifyListeners();
     }
@@ -613,6 +653,7 @@ class OfflineSyncStore {
     const tasks = this.getTasks();
     const idx = tasks.findIndex((t) => t.id === id);
     if (idx !== -1) {
+      const before = { ...tasks[idx], syncMeta: { ...tasks[idx].syncMeta } };
       tasks[idx].syncMeta = {
         ...tasks[idx].syncMeta,
         syncStatus: status,
@@ -623,6 +664,8 @@ class OfflineSyncStore {
         ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
         ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
+      const after = { ...tasks[idx], syncMeta: { ...tasks[idx].syncMeta } };
+      this.logSyncStatusChange("maintenanceTask", before, after);
       this.saveToStorage(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
       this.notifyListeners();
     }
@@ -800,6 +843,7 @@ class OfflineSyncStore {
     const tasks = this.getRetestTasks();
     const idx = tasks.findIndex((t) => t.id === id);
     if (idx !== -1) {
+      const before = { ...tasks[idx], syncMeta: { ...tasks[idx].syncMeta } };
       tasks[idx].syncMeta = {
         ...tasks[idx].syncMeta,
         syncStatus: status,
@@ -811,6 +855,8 @@ class OfflineSyncStore {
         ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
         ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
+      const after = { ...tasks[idx], syncMeta: { ...tasks[idx].syncMeta } };
+      this.logSyncStatusChange("retestTask", before, after);
       this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(tasks));
       this.notifyListeners();
     }
