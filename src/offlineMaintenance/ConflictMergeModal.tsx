@@ -27,10 +27,11 @@ interface FieldConfig {
 }
 
 const WATER_RECORD_FIELDS: FieldConfig[] = [
-  { key: "tankName", label: "鱼缸名称" },
-  { key: "recordedAt", label: "记录时间" },
-  { key: "status", label: "状态" },
-  { key: "note", label: "备注" },
+  { key: "tankName", label: "鱼缸名称", group: "基础信息" },
+  { key: "recordedAt", label: "记录时间", group: "基础信息" },
+  { key: "status", label: "状态", group: "基础信息",
+    format: (v) => v === "稳定" ? "✅ 稳定" : v === "关注" ? "⚠️ 关注" : v === "异常" ? "🚨 异常" : String(v ?? "—") },
+  { key: "note", label: "备注", group: "基础信息" },
   { key: "metrics.ph", label: "pH", group: "水质指标" },
   { key: "metrics.ammonia", label: "氨氮", group: "水质指标" },
   { key: "metrics.nitrite", label: "亚硝酸盐", group: "水质指标" },
@@ -41,39 +42,54 @@ const WATER_RECORD_FIELDS: FieldConfig[] = [
 ];
 
 const WATER_CHANGE_PLAN_FIELDS: FieldConfig[] = [
-  { key: "tankName", label: "鱼缸名称" },
-  { key: "cycleDays", label: "换水周期（天）" },
-  { key: "waterRatio", label: "换水比例（%）" },
-  { key: "nextDate", label: "下次维护日期" },
-  { key: "note", label: "备注" },
-  { key: "completedAt", label: "完成时间" },
+  { key: "tankName", label: "鱼缸名称", group: "基础信息" },
+  { key: "cycleDays", label: "换水周期（天）", group: "计划信息" },
+  { key: "waterRatio", label: "换水比例（%）", group: "计划信息" },
+  { key: "nextDate", label: "下次维护日期", group: "计划信息" },
+  { key: "note", label: "备注", group: "计划信息" },
+  { key: "createdAt", label: "创建时间", group: "计划信息" },
+  { key: "completedAt", label: "完成时间", group: "完成信息" },
 ];
 
 const ALERT_FIELDS: FieldConfig[] = [
-  { key: "tankName", label: "鱼缸名称" },
-  { key: "tankType", label: "鱼缸类型" },
-  { key: "metric", label: "指标" },
-  { key: "value", label: "数值" },
-  { key: "threshold", label: "阈值" },
-  { key: "severity", label: "严重程度" },
-  { key: "description", label: "描述" },
-  { key: "status", label: "状态" },
-  { key: "treatment", label: "处理方式" },
-  { key: "treatmentNote", label: "处理备注" },
-  { key: "handler", label: "处理人" },
-  { key: "isClosed", label: "是否已关闭" },
+  { key: "tankName", label: "鱼缸名称", group: "基础信息" },
+  { key: "tankType", label: "鱼缸类型", group: "基础信息" },
+  { key: "metric", label: "指标", group: "基础信息" },
+  { key: "metricLabel", label: "指标名称", group: "基础信息" },
+  { key: "value", label: "数值", group: "异常详情" },
+  { key: "unit", label: "单位", group: "异常详情" },
+  { key: "threshold", label: "阈值", group: "异常详情" },
+  { key: "thresholdRange", label: "阈值范围", group: "异常详情" },
+  { key: "severity", label: "严重程度", group: "异常详情",
+    format: (v) => v === "severe" ? "严重" : v === "mild" ? "轻微" : String(v ?? "—") },
+  { key: "description", label: "描述", group: "异常详情" },
+  { key: "status", label: "状态", group: "处理信息",
+    format: (v) => v === "pending" ? "待处理" : v === "processed" ? "已处理" : String(v ?? "—") },
+  { key: "treatment", label: "处理方式", group: "处理信息" },
+  { key: "treatmentNote", label: "处理备注", group: "处理信息" },
+  { key: "handler", label: "处理人", group: "处理信息" },
+  { key: "isClosed", label: "是否已关闭", group: "处理信息",
+    format: (v) => v === true ? "是" : v === false ? "否" : "—" },
+  { key: "closedAt", label: "关闭时间", group: "处理信息" },
+  { key: "retestResult", label: "复测结果", group: "处理信息",
+    format: (v) => v === "recovered" ? "已恢复" : v === "not_recovered" ? "未恢复" : String(v ?? "—") },
 ];
 
 const MAINTENANCE_TASK_FIELDS: FieldConfig[] = [
-  { key: "title", label: "任务标题" },
-  { key: "type", label: "任务类型" },
-  { key: "description", label: "描述" },
-  { key: "tankName", label: "鱼缸名称" },
-  { key: "status", label: "状态" },
-  { key: "priority", label: "优先级" },
-  { key: "dueDate", label: "截止日期" },
-  { key: "assignee", label: "负责人" },
-  { key: "completedNote", label: "完成备注" },
+  { key: "title", label: "任务标题", group: "基础信息" },
+  { key: "type", label: "任务类型", group: "基础信息",
+    format: (v) => v === "waterChange" ? "换水" : v === "waterTest" ? "水质检测" : v === "alertFollowUp" ? "异常跟进" : String(v ?? "—") },
+  { key: "description", label: "任务描述", group: "基础信息" },
+  { key: "tankName", label: "鱼缸名称", group: "基础信息" },
+  { key: "status", label: "状态", group: "任务管理",
+    format: (v) => v === "pending" ? "待处理" : v === "inProgress" ? "进行中" : v === "completed" ? "已完成" : String(v ?? "—") },
+  { key: "priority", label: "优先级", group: "任务管理",
+    format: (v) => v === "low" ? "低" : v === "medium" ? "中" : v === "high" ? "高" : String(v ?? "—") },
+  { key: "dueDate", label: "截止日期", group: "任务管理" },
+  { key: "assignee", label: "负责人", group: "任务管理" },
+  { key: "createdAt", label: "创建时间", group: "任务管理" },
+  { key: "completedAt", label: "完成时间", group: "完成信息" },
+  { key: "completedNote", label: "完成备注", group: "完成信息" },
 ];
 
 const RETEST_TASK_FIELDS: FieldConfig[] = [
@@ -336,7 +352,7 @@ export function ConflictMergeModal({ item, onClose, onResolved }: ConflictMergeM
                         onClick={() => handleFieldChoice(field.key, "local")}
                       >
                         <div className="merge-value-content">
-                          {formatValue(localVal)}
+                          {field.format ? field.format(localVal) : formatValue(localVal)}
                         </div>
                         <div className="merge-value-check">
                           {choice === "local" && "✓"}
@@ -347,7 +363,7 @@ export function ConflictMergeModal({ item, onClose, onResolved }: ConflictMergeM
                         onClick={() => handleFieldChoice(field.key, "server")}
                       >
                         <div className="merge-value-content">
-                          {formatValue(serverVal)}
+                          {field.format ? field.format(serverVal) : formatValue(serverVal)}
                         </div>
                         <div className="merge-value-check">
                           {choice === "server" && "✓"}

@@ -1161,6 +1161,100 @@ class OfflineSyncStore {
       }
     }
 
+    const demoAlert = this.getAlerts().find(a => a.tankName === "草缸A" && a.metric === "硝酸盐");
+    if (!demoAlert) {
+      this.saveAlert({
+        id: "offline_demo_alert_conflict_1",
+        recordId: "offline_demo_record_conflict_1",
+        tankName: "草缸A",
+        tankType: "草缸",
+        metric: "nitrate",
+        metricLabel: "硝酸盐",
+        value: "25",
+        unit: "ppm",
+        threshold: "≤ 20",
+        thresholdRange: "0 ~ 20 ppm",
+        severity: "mild",
+        description: "硝酸盐浓度略高于安全范围，建议增加换水频率",
+        status: "pending",
+        createdAt: yesterdayStr,
+        syncMeta: { ...createSyncMeta("conflict") },
+      });
+      const alertForConflict = this.getAlerts().find(a => a.id === "offline_demo_alert_conflict_1");
+      if (alertForConflict) {
+        this.addToQueue("alert", alertForConflict.id, "update", alertForConflict);
+        const queue = this.getSyncQueue();
+        const queueItem = queue.find(q => q.entityId === alertForConflict.id);
+        if (queueItem) {
+          this.updateQueueItem(queueItem.id, {
+            status: "conflict",
+            errorMessage: "处理状态存在冲突，服务器端已处理该提醒（模拟冲突）",
+            retryCount: 1,
+            lastAttemptAt: yesterdayStr,
+            conflictData: {
+              localSnapshot: alertForConflict,
+              serverSnapshot: {
+                ...alertForConflict,
+                status: "processed",
+                severity: "severe",
+                treatment: "换水",
+                treatmentNote: "[服务器版本] 已换水30%，硝酸盐降至18ppm (模拟服务器处理)",
+                handler: "王师傅",
+                isClosed: true,
+                closedAt: yesterdayStr,
+                retestResult: "recovered",
+              },
+              conflictReason: "处理状态存在冲突，服务器端已处理该提醒（模拟冲突）",
+            },
+          });
+        }
+      }
+    }
+
+    const demoTask = this.getTasks().find(t => t.tankName === "海缸B" && t.type === "alertFollowUp");
+    if (!demoTask) {
+      this.saveTask({
+        id: "offline_demo_task_conflict_1",
+        type: "alertFollowUp",
+        title: "海缸B钙硬度异常跟进",
+        description: "检测钙硬度偏低，需补充钙添加剂并持续监测",
+        tankName: "海缸B",
+        status: "inProgress",
+        priority: "high",
+        dueDate: formatDate(new Date(now.getTime() + 1 * 86400000)).slice(0, 10),
+        assignee: "李师傅",
+        createdAt: twoDaysAgoStr,
+        syncMeta: { ...createSyncMeta("conflict") },
+      });
+      const taskForConflict = this.getTasks().find(t => t.id === "offline_demo_task_conflict_1");
+      if (taskForConflict) {
+        this.addToQueue("maintenanceTask", taskForConflict.id, "update", taskForConflict);
+        const queue = this.getSyncQueue();
+        const queueItem = queue.find(q => q.entityId === taskForConflict.id);
+        if (queueItem) {
+          this.updateQueueItem(queueItem.id, {
+            status: "conflict",
+            errorMessage: "任务进度存在冲突，双方都更新了该维护任务（模拟冲突）",
+            retryCount: 2,
+            lastAttemptAt: yesterdayStr,
+            conflictData: {
+              localSnapshot: taskForConflict,
+              serverSnapshot: {
+                ...taskForConflict,
+                status: "completed",
+                priority: "medium",
+                assignee: "张师傅",
+                completedAt: yesterdayStr,
+                completedNote: "[服务器版本] 已添加钙补充剂，硬度恢复至11dGH，任务完成 (模拟服务器更新)",
+                description: "检测钙硬度偏低，需补充钙添加剂并持续监测",
+              },
+              conflictReason: "任务进度存在冲突，双方都更新了该维护任务（模拟冲突）",
+            },
+          });
+        }
+      }
+    }
+
     this.notifyListeners();
   }
 }
