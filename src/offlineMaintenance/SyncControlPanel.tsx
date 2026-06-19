@@ -5,8 +5,11 @@ import {
   type SyncStats,
   type SyncQueueItem,
   type EntityType,
+  MERGE_SOURCE_LABEL,
+  MERGE_SOURCE_COLOR,
 } from "../offlineSync";
 import { SYNC_STATUS_LABEL } from "../offlineSync";
+import { ConflictMergeModal } from "./ConflictMergeModal";
 
 const ENTITY_TYPE_LABEL: Record<EntityType, string> = {
   waterRecord: "水质记录",
@@ -32,6 +35,7 @@ export function SyncControlPanel() {
   } | null>(null);
   const [lastSyncResult, setLastSyncResult] = useState<string | null>(null);
   const [selectedConflict, setSelectedConflict] = useState<SyncQueueItem | null>(null);
+  const [mergeModalOpen, setMergeModalOpen] = useState<SyncQueueItem | null>(null);
   const [expandedQueue, setExpandedQueue] = useState(true);
 
   const refresh = () => {
@@ -272,18 +276,42 @@ export function SyncControlPanel() {
                           <span>最后尝试: {item.lastAttemptAt}</span>
                         )}
                       </div>
+                      {item.lastMergeSource && item.lastMergeAt && (
+                        <div className="queue-item-merge-info">
+                          <span
+                            className="merge-source-badge"
+                            style={{
+                              background: `color-mix(in srgb, ${MERGE_SOURCE_COLOR[item.lastMergeSource]} 14%, #ffffff)`,
+                              color: MERGE_SOURCE_COLOR[item.lastMergeSource],
+                            }}
+                          >
+                            合并来源: {MERGE_SOURCE_LABEL[item.lastMergeSource]}
+                          </span>
+                          <span className="merge-time-text">
+                            最近处理: {item.lastMergeAt}
+                          </span>
+                        </div>
+                      )}
                       {item.errorMessage && (
                         <p className="queue-item-error">❌ {item.errorMessage}</p>
                       )}
                     </div>
                     <div className="queue-item-actions">
                       {item.status === "conflict" && (
-                        <button
-                          className="secondary-action"
-                          onClick={() => setSelectedConflict(item)}
-                        >
-                          🔀 解决冲突
-                        </button>
+                        <>
+                          <button
+                            className="secondary-action"
+                            onClick={() => setMergeModalOpen(item)}
+                          >
+                            ✋ 手动合并
+                          </button>
+                          <button
+                            className="secondary-action"
+                            onClick={() => setSelectedConflict(item)}
+                          >
+                            🔀 快速解决
+                          </button>
+                        </>
                       )}
                       {(item.status === "queued" ||
                         item.status === "failed") && (
@@ -378,6 +406,17 @@ export function SyncControlPanel() {
             </footer>
           </div>
         </div>
+      )}
+
+      {mergeModalOpen && (
+        <ConflictMergeModal
+          item={mergeModalOpen}
+          onClose={() => setMergeModalOpen(null)}
+          onResolved={() => {
+            setMergeModalOpen(null);
+            refresh();
+          }}
+        />
       )}
     </section>
   );

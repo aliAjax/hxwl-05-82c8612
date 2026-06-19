@@ -15,6 +15,23 @@ export type EntityType =
 
 export type SyncOperation = "create" | "update" | "delete";
 
+export type MergeSource = "local" | "server" | "manual";
+
+export interface MergeFieldChoice {
+  field: string;
+  source: "local" | "server";
+}
+
+export interface MergeHistoryEntry {
+  id: string;
+  entityType: EntityType;
+  entityId: string;
+  mergeSource: MergeSource;
+  fieldChoices?: MergeFieldChoice[];
+  mergedAt: string;
+  conflictReason: string;
+}
+
 export interface SyncMeta {
   syncStatus: SyncStatus;
   syncError?: string;
@@ -26,6 +43,8 @@ export interface SyncMeta {
     serverSnapshot?: unknown;
     conflictReason: string;
   };
+  lastMergeSource?: MergeSource;
+  lastMergeAt?: string;
 }
 
 export interface SyncQueueItem {
@@ -39,6 +58,13 @@ export interface SyncQueueItem {
   errorMessage?: string;
   retryCount: number;
   lastAttemptAt?: string;
+  lastMergeSource?: MergeSource;
+  lastMergeAt?: string;
+  conflictData?: {
+    localSnapshot: unknown;
+    serverSnapshot?: unknown;
+    conflictReason: string;
+  };
 }
 
 export interface OfflineWaterRecord {
@@ -178,4 +204,16 @@ export const SYNC_STATUS_COLOR: Record<SyncStatus, string> = {
   pending: "pending",
   failed: "failed",
   conflict: "conflict",
+};
+
+export const MERGE_SOURCE_LABEL: Record<MergeSource, string> = {
+  local: "本地版本",
+  server: "服务器版本",
+  manual: "人工合并",
+};
+
+export const MERGE_SOURCE_COLOR: Record<MergeSource, string> = {
+  local: "#0891b2",
+  server: "#16a34a",
+  manual: "#8b5cf6",
 };

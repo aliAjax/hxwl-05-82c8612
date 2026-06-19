@@ -4,6 +4,8 @@ import type {
   EntityType,
   SyncStatus,
   SyncMeta,
+  MergeFieldChoice,
+  MergeSource,
 } from "./types";
 
 type SyncProgressCallback = (
@@ -75,23 +77,25 @@ class SyncEngine {
     entityId: string,
     status: SyncStatus,
     error?: string,
-    conflictData?: SyncMeta["conflictData"]
+    conflictData?: SyncMeta["conflictData"],
+    mergeSource?: MergeSource,
+    mergeAt?: string
   ) {
     switch (entityType) {
       case "waterRecord":
-        offlineSyncStore.updateRecordSyncStatus(entityId, status, error, conflictData);
+        offlineSyncStore.updateRecordSyncStatus(entityId, status, error, conflictData, mergeSource, mergeAt);
         break;
       case "waterChangePlan":
-        offlineSyncStore.updatePlanSyncStatus(entityId, status, error, conflictData);
+        offlineSyncStore.updatePlanSyncStatus(entityId, status, error, conflictData, mergeSource, mergeAt);
         break;
       case "alert":
-        offlineSyncStore.updateAlertSyncStatus(entityId, status, error, conflictData);
+        offlineSyncStore.updateAlertSyncStatus(entityId, status, error, conflictData, mergeSource, mergeAt);
         break;
       case "maintenanceTask":
-        offlineSyncStore.updateTaskSyncStatus(entityId, status, error, conflictData);
+        offlineSyncStore.updateTaskSyncStatus(entityId, status, error, conflictData, mergeSource, mergeAt);
         break;
       case "retestTask":
-        offlineSyncStore.updateRetestTaskSyncStatus(entityId, status, error, conflictData);
+        offlineSyncStore.updateRetestTaskSyncStatus(entityId, status, error, conflictData, mergeSource, mergeAt);
         break;
       case "tank":
         break;
@@ -141,6 +145,7 @@ class SyncEngine {
           status: "conflict",
           errorMessage: outcome.conflict.conflictReason,
           retryCount: item.retryCount + 1,
+          conflictData: outcome.conflict,
         });
         this.updateEntitySyncStatus(
           item.entityType,
@@ -212,6 +217,7 @@ class SyncEngine {
         status: "conflict",
         errorMessage: outcome.conflict.conflictReason,
         retryCount: item.retryCount + 1,
+        conflictData: outcome.conflict,
       });
       this.updateEntitySyncStatus(
         item.entityType,
@@ -255,16 +261,27 @@ class SyncEngine {
     const item = queue.find((q) => q.id === queueItemId);
     if (!item) return false;
 
+    const now = formatDate(new Date());
+    const mergeSource: MergeSource =
+      resolution === "useLocal" ? "local" :
+      resolution === "useServer" ? "server" : "manual";
+
     if (resolution === "useLocal") {
       offlineSyncStore.updateQueueItem(item.id, {
         status: "queued",
         errorMessage: undefined,
         retryCount: 0,
+        lastMergeSource: mergeSource,
+        lastMergeAt: now,
       });
       this.updateEntitySyncStatus(
         item.entityType,
         item.entityId,
-        "pending"
+        "pending",
+        undefined,
+        undefined,
+        mergeSource,
+        now
       );
       return true;
     }
@@ -274,12 +291,59 @@ class SyncEngine {
       this.updateEntitySyncStatus(
         item.entityType,
         item.entityId,
-        "synced"
+        "synced",
+        undefined,
+        undefined,
+        mergeSource,
+        now
       );
       return true;
     }
 
     return false;
+  }
+
+  resolveConflictWithMerge(
+    queueItemId: string,
+    mergedData: unknown,
+    fieldChoices: MergeFieldChoice[]
+  ): boolean {
+    const queue = offlineSyncStore.getSyncQueue();
+    const item = queue.find((q) => q.id === queueItemId);
+    if (!item) return false;
+
+    const now = formatDate(new Date());
+
+    offlineSyncStore.updateQueueItem(item.id, {
+      status: "queued",
+      errorMessage: undefined,
+      retryCount: 0,
+      data: mergedData,
+      lastMergeSource: "manual",
+      lastMergeAt: now,
+    });
+
+    this.updateEntitySyncStatus(
+      item.entityType,
+      item.entityId,
+      "pending",
+      undefined,
+      undefined,
+      "manual",
+      now
+    );
+
+    offlineSyncStore.addMergeHistory({
+      id: `merge_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      entityType: item.entityType,
+      entityId: item.entityId,
+      mergeSource: "manual",
+      fieldChoices,
+      mergedAt: now,
+      conflictReason: item.errorMessage || "数据冲突",
+    });
+
+    return true;
   }
 
   retryFailed(queueItemId: string): boolean {

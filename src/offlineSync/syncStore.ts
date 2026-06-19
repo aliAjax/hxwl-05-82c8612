@@ -13,6 +13,8 @@ import type {
   OfflineRetestTaskStatus,
   OfflineRetestResult,
   OfflineTreatmentAction,
+  MergeHistoryEntry,
+  MergeSource,
 } from "./types";
 
 const STORAGE_KEYS = {
@@ -23,6 +25,7 @@ const STORAGE_KEYS = {
   TASKS: "hxwl_offline_tasks",
   RETEST_TASKS: "hxwl_offline_retest_tasks",
   NETWORK_STATUS: "hxwl_offline_network_status",
+  MERGE_HISTORY: "hxwl_offline_merge_history",
 };
 
 const createSyncMeta = (status: SyncStatus = "draft"): SyncMeta => ({
@@ -224,7 +227,9 @@ class OfflineSyncStore {
     id: string,
     status: SyncStatus,
     error?: string,
-    conflictData?: SyncMeta["conflictData"]
+    conflictData?: SyncMeta["conflictData"],
+    mergeSource?: MergeSource,
+    mergeAt?: string
   ) {
     const records = this.getWaterRecords();
     const idx = records.findIndex((r) => r.id === id);
@@ -236,6 +241,8 @@ class OfflineSyncStore {
         lastSyncAt: status === "synced" ? formatDate(new Date()) : records[idx].syncMeta.lastSyncAt,
         syncAttempts: records[idx].syncMeta.syncAttempts + 1,
         conflictData,
+        ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
+        ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
       this.saveToStorage(
         STORAGE_KEYS.WATER_RECORDS,
@@ -303,7 +310,9 @@ class OfflineSyncStore {
     id: string,
     status: SyncStatus,
     error?: string,
-    conflictData?: SyncMeta["conflictData"]
+    conflictData?: SyncMeta["conflictData"],
+    mergeSource?: MergeSource,
+    mergeAt?: string
   ) {
     const plans = this.getWaterPlans();
     const idx = plans.findIndex((p) => p.id === id);
@@ -315,6 +324,8 @@ class OfflineSyncStore {
         lastSyncAt: status === "synced" ? formatDate(new Date()) : plans[idx].syncMeta.lastSyncAt,
         syncAttempts: plans[idx].syncMeta.syncAttempts + 1,
         conflictData,
+        ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
+        ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
       this.saveToStorage(STORAGE_KEYS.WATER_PLANS, JSON.stringify(plans));
       this.notifyListeners();
@@ -380,7 +391,9 @@ class OfflineSyncStore {
     id: string,
     status: SyncStatus,
     error?: string,
-    conflictData?: SyncMeta["conflictData"]
+    conflictData?: SyncMeta["conflictData"],
+    mergeSource?: MergeSource,
+    mergeAt?: string
   ) {
     const alerts = this.getAlerts();
     const idx = alerts.findIndex((a) => a.id === id);
@@ -392,6 +405,8 @@ class OfflineSyncStore {
         lastSyncAt: status === "synced" ? formatDate(new Date()) : alerts[idx].syncMeta.lastSyncAt,
         syncAttempts: alerts[idx].syncMeta.syncAttempts + 1,
         conflictData,
+        ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
+        ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
       this.saveToStorage(STORAGE_KEYS.ALERTS, JSON.stringify(alerts));
       this.notifyListeners();
@@ -450,7 +465,9 @@ class OfflineSyncStore {
     id: string,
     status: SyncStatus,
     error?: string,
-    conflictData?: SyncMeta["conflictData"]
+    conflictData?: SyncMeta["conflictData"],
+    mergeSource?: MergeSource,
+    mergeAt?: string
   ) {
     const tasks = this.getTasks();
     const idx = tasks.findIndex((t) => t.id === id);
@@ -462,6 +479,8 @@ class OfflineSyncStore {
         lastSyncAt: status === "synced" ? formatDate(new Date()) : tasks[idx].syncMeta.lastSyncAt,
         syncAttempts: tasks[idx].syncMeta.syncAttempts + 1,
         conflictData,
+        ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
+        ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
       this.saveToStorage(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
       this.notifyListeners();
@@ -567,7 +586,9 @@ class OfflineSyncStore {
     id: string,
     status: SyncStatus,
     error?: string,
-    conflictData?: SyncMeta["conflictData"]
+    conflictData?: SyncMeta["conflictData"],
+    mergeSource?: MergeSource,
+    mergeAt?: string
   ) {
     const tasks = this.getRetestTasks();
     const idx = tasks.findIndex((t) => t.id === id);
@@ -580,6 +601,8 @@ class OfflineSyncStore {
           status === "synced" ? formatDate(new Date()) : tasks[idx].syncMeta.lastSyncAt,
         syncAttempts: tasks[idx].syncMeta.syncAttempts + 1,
         conflictData,
+        ...(mergeSource !== undefined && { lastMergeSource: mergeSource }),
+        ...(mergeAt !== undefined && { lastMergeAt: mergeAt }),
       };
       this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(tasks));
       this.notifyListeners();
@@ -797,6 +820,30 @@ class OfflineSyncStore {
       this.notifyListeners();
     }
     return promoted;
+  }
+
+  getMergeHistory(): MergeHistoryEntry[] {
+    return this.loadFromStorage<MergeHistoryEntry[]>(STORAGE_KEYS.MERGE_HISTORY, []);
+  }
+
+  addMergeHistory(entry: Omit<MergeHistoryEntry, "id"> & { id?: string }): MergeHistoryEntry {
+    const history = this.getMergeHistory();
+    const result: MergeHistoryEntry = {
+      id: entry.id || `merge_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      entityType: entry.entityType,
+      entityId: entry.entityId,
+      mergeSource: entry.mergeSource,
+      fieldChoices: entry.fieldChoices,
+      mergedAt: entry.mergedAt,
+      conflictReason: entry.conflictReason,
+    };
+    history.unshift(result);
+    this.saveToStorage(STORAGE_KEYS.MERGE_HISTORY, JSON.stringify(history));
+    return result;
+  }
+
+  clearMergeHistory() {
+    this.saveToStorage(STORAGE_KEYS.MERGE_HISTORY, JSON.stringify([]));
   }
 
   clearAllOfflineData() {
@@ -1061,6 +1108,58 @@ class OfflineSyncStore {
       handler: "王师傅",
       syncMeta: { ...createSyncMeta("synced"), lastSyncAt: yesterdayStr },
     });
+
+    const demoWaterRecord = this.getWaterRecords().find(r => r.tankName === "海缸B");
+    if (demoWaterRecord) {
+      this.addToQueue("waterRecord", demoWaterRecord.id, "update", demoWaterRecord);
+      const queue = this.getSyncQueue();
+      const queueItem = queue.find(q => q.entityId === demoWaterRecord.id);
+      if (queueItem) {
+        this.updateQueueItem(queueItem.id, {
+          status: "conflict",
+          errorMessage: "服务器数据较本地更新，或双方同时修改了同一记录 (模拟冲突)",
+          retryCount: 2,
+          lastAttemptAt: yesterdayStr,
+          conflictData: {
+            localSnapshot: demoWaterRecord,
+            serverSnapshot: {
+              ...demoWaterRecord,
+              note: "[服务器版本] 钙硬度偏低，已安排补充剂添加 (模拟服务器更新)",
+              metrics: {
+                ...demoWaterRecord.metrics,
+                hardness: "9",
+              },
+            },
+            conflictReason: "服务器数据较本地更新，或双方同时修改了同一记录 (模拟冲突)",
+          },
+        });
+      }
+    }
+
+    const demoPlan = this.getWaterPlans().find(p => p.tankName === "繁殖缸C");
+    if (demoPlan) {
+      this.addToQueue("waterChangePlan", demoPlan.id, "update", demoPlan);
+      const queue = this.getSyncQueue();
+      const queueItem = queue.find(q => q.entityId === demoPlan.id);
+      if (queueItem) {
+        this.updateQueueItem(queueItem.id, {
+          status: "conflict",
+          errorMessage: "服务器版本与本地修改不一致（模拟冲突）",
+          retryCount: 1,
+          lastAttemptAt: yesterdayStr,
+          conflictData: {
+            localSnapshot: demoPlan,
+            serverSnapshot: {
+              ...demoPlan,
+              waterRatio: "30",
+              cycleDays: "7",
+              note: "[服务器版本] 调整为常规换水频率 (模拟服务器更新)",
+            },
+            conflictReason: "服务器版本与本地修改不一致（模拟冲突）",
+          },
+        });
+      }
+    }
 
     this.notifyListeners();
   }
