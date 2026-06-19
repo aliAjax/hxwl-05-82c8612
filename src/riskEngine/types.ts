@@ -39,23 +39,4 @@ export interface TankRiskContext {
   alerts: AlertItem[];
 }
 
-export const RISK_LEVEL_THRESHOLDS = {
-  low: 10,
-  medium: 25,
-  high: 50,
-};
-
-export const RISK_SCORE_CONFIG = {
-  single_threshold_mild: 5,
-  single_threshold_severe: 15,
-  continuous_rise_mild: 10,
-  continuous_rise_severe: 25,
-  rapid_fluctuation_mild: 8,
-  rapid_fluctuation_severe: 20,
-  no_water_change_mild: 8,
-  no_water_change_severe: 20,
-  retest_still_abnormal_mild: 12,
-  retest_still_abnormal_severe: 30,
-  capacity_sensitivity: 5,
-  multiple_metrics_bonus: 10,
-};
+export { getRiskScoreConfig, getRiskLevelThresholds } from "../ruleConfig/ruleEngine";

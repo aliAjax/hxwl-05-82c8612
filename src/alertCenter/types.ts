@@ -25,9 +25,11 @@ export const TREATMENT_ACTIONS: TreatmentAction[] = [
 
 export interface MetricThreshold {
   ok: [number, number];
-  mild: [number, number];
+  watch: [number, number];
+  severe: [number, number];
   unit: string;
   label: string;
+  step: string;
 }
 
 export type ThresholdConfig = Record<TankType, Record<AlertMetric, MetricThreshold>>;

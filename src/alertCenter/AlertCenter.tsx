@@ -404,7 +404,7 @@ export function generateAlertsFromRecord(
     const result = evaluateMetricValue(tankType, key, rawValue, customThresholds);
     if (!result || result.status === "ok") continue;
 
-    const threshold = result.threshold;
+    const rule = result.rule;
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
     const createdAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -415,18 +415,18 @@ export function generateAlertsFromRecord(
       tankId,
       tankType,
       metric: key,
-      metricLabel: threshold.label,
+      metricLabel: rule.label,
       value: rawValue,
-      unit: threshold.unit,
+      unit: rule.unit,
       severity: result.status === "severe" ? "severe" : "mild",
       status: "pending",
-      thresholdRange: formatThresholdRange(threshold),
+      thresholdRange: formatThresholdRange(rule),
       description: buildAlertDescription(
-        threshold.label,
+        rule.label,
         rawValue,
-        threshold.unit,
+        rule.unit,
         result.status === "severe" ? "severe" : "mild",
-        threshold
+        rule
       ),
       recordId,
       recordedAt,

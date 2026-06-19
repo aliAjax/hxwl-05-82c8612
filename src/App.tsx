@@ -12,12 +12,9 @@ import type {
   TankProfile,
   PlanStatus,
   WaterChangePlan,
-  CustomThresholds,
   ThresholdMetric,
-  MetricRange,
 } from "./db/types";
 import {
-  TANK_TEMPLATES,
   TANK_TEMPLATE_TYPES,
   TEMPLATE_METRIC_LABELS,
   TEMPLATE_METRIC_UNITS,
@@ -25,10 +22,16 @@ import {
   TEMPLATE_METRIC_ORDER,
   cloneTemplateThresholds,
   getAllEffectiveThresholds,
-  getEffectiveThresholds,
-  getTemplateThresholds,
 } from "./db/tankTemplates";
 import { Dashboard } from "./dashboard";
+import {
+  evaluateMetricValue,
+  evaluateRecordStatus,
+  getMetricRule,
+  RuleConfigPanel,
+  RULE_METRICS,
+} from "./ruleConfig";
+import type { RuleConfig, RuleMetric } from "./ruleConfig";
 import { ImportWaterRecordsModal } from "./importCsv";
 import type { ImportRecordItem } from "./importCsv";
 import type { AlertItem } from "./alertCenter/types";
@@ -115,18 +118,6 @@ const statusColors = ["status-ok", "status-watch", "status-danger"];
 
 const TANK_TYPES = ["草缸", "海缸", "三湖缸", "繁殖缸"];
 
-const METRIC_RANGES: Record<
-  keyof Omit<WaterMetrics, "waterChange">,
-  { ok: [number, number]; watch: [number, number]; unit: string; label: string }
-> = {
-  ph: { ok: [6.5, 7.5], watch: [6.0, 8.0], unit: "", label: "pH" },
-  ammonia: { ok: [0, 0], watch: [0, 0.25], unit: "ppm", label: "氨氮" },
-  nitrite: { ok: [0, 0], watch: [0, 0.5], unit: "ppm", label: "亚硝酸盐" },
-  nitrate: { ok: [0, 20], watch: [0, 40], unit: "ppm", label: "硝酸盐" },
-  hardness: { ok: [4, 12], watch: [2, 18], unit: "dGH", label: "硬度" },
-  temperature: { ok: [24, 28], watch: [20, 32], unit: "°C", label: "温度" },
-};
-
 const emptyWaterMetrics: WaterMetrics = {
   ph: "",
   ammonia: "",
@@ -164,93 +155,6 @@ function MetricCard({ label, value, index }: { label: string; value: string; ind
       <i className={statusColors[index % statusColors.length]} />
     </article>
   );
-}
-
-function getMetricRange(
-  key: keyof Omit<WaterMetrics, "waterChange">,
-  tank?: TankProfile
-): { ok: [number, number]; watch: [number, number]; unit: string; label: string } {
-  const customizable: ThresholdMetric[] = ["ph", "nitrate", "hardness", "temperature"];
-  if (tank && (customizable as string[]).includes(key)) {
-    const eff = getEffectiveThresholds(tank, key as ThresholdMetric);
-    return {
-      ok: eff.ok,
-      watch: eff.watch,
-      unit: TEMPLATE_METRIC_UNITS[key as ThresholdMetric],
-      label: TEMPLATE_METRIC_LABELS[key as ThresholdMetric],
-    };
-  }
-  return METRIC_RANGES[key];
-}
-
-function evaluateMetric(
-  key: keyof Omit<WaterMetrics, "waterChange">,
-  raw: string,
-  tank?: TankProfile
-): RecordStatus {
-  const value = parseFloat(raw);
-  if (isNaN(value)) return "稳定";
-  const range = getMetricRange(key, tank);
-  if (value < range.watch[0] || value > range.watch[1]) return "异常";
-  if (value < range.ok[0] || value > range.ok[1]) return "关注";
-  return "稳定";
-}
-
-function evaluateRecordStatus(
-  metrics: WaterMetrics,
-  tank?: TankProfile
-): { status: RecordStatus; note: string } {
-  const metricKeys = Object.keys(METRIC_RANGES) as (keyof Omit<WaterMetrics, "waterChange">)[];
-  const issues: { key: keyof Omit<WaterMetrics, "waterChange">; status: RecordStatus }[] = [];
-  let overall: RecordStatus = "稳定";
-
-  for (const key of metricKeys) {
-    const raw = metrics[key];
-    if (!raw.trim()) continue;
-    const st = evaluateMetric(key, raw, tank);
-    if (st !== "稳定") {
-      issues.push({ key, status: st });
-    }
-    if (st === "异常") overall = "异常";
-    else if (st === "关注" && overall !== "异常") overall = "关注";
-  }
-
-  let note = "";
-  if (issues.length === 0) {
-    note = "各项指标正常，继续保持";
-  } else {
-    const dangerItems = issues.filter((i) => i.status === "异常");
-    const watchItems = issues.filter((i) => i.status === "关注");
-    const parts: string[] = [];
-    if (dangerItems.length > 0) {
-      parts.push(
-        dangerItems
-          .map((i) => {
-            const r = getMetricRange(i.key, tank);
-            return `${r.label}${metrics[i.key]}${r.unit}异常`;
-          })
-          .join("、")
-      );
-    }
-    if (watchItems.length > 0) {
-      parts.push(
-        watchItems
-          .map((i) => {
-            const r = getMetricRange(i.key, tank);
-            return `${r.label}${metrics[i.key]}需关注`;
-          })
-          .join("、")
-      );
-    }
-    note = parts.join("；");
-    if (metrics.waterChange.trim()) {
-      note += `；本次换水${metrics.waterChange}`;
-    }
-    if (dangerItems.length > 0) {
-      note += "，建议立即处理";
-    }
-  }
-  return { status: overall, note };
 }
 
 function getPlanStatus(plan: WaterChangePlan): PlanStatus {
@@ -624,11 +528,13 @@ function App() {
       const metricKey = task.sourceAlertMetric as keyof WaterMetrics;
       const retestValue = newRecord.metrics[metricKey];
       if (retestValue && retestValue.trim()) {
-        const metricStatus = evaluateMetric(
-          metricKey as keyof Omit<WaterMetrics, "waterChange">,
+        const metricEvalResult = evaluateMetricValue(
+          selectedTank?.tankType || "草缸",
+          metricKey as RuleMetric,
           retestValue,
-          selectedTank
+          selectedTank?.customThresholds
         );
+        const metricStatus = metricEvalResult?.recordStatus ?? "稳定";
         const isRecovered = metricStatus === "稳定";
         const { task: updatedTask, alert: updatedAlert } = await dataService.completeRetestTask(
           task.id,
@@ -663,9 +569,9 @@ function App() {
 
   const buildMetricSummary = (metrics: WaterMetrics, tank?: TankProfile) => {
     const parts: string[] = [];
-    (Object.keys(METRIC_RANGES) as (keyof Omit<WaterMetrics, "waterChange">)[]).forEach((k) => {
+    RULE_METRICS.forEach((k) => {
       if (metrics[k].trim()) {
-        const r = getMetricRange(k, tank);
+        const r = getMetricRule(tank?.tankType || "草缸", k, tank?.customThresholds);
         parts.push(`${r.label} ${metrics[k]}${r.unit}`);
       }
     });
@@ -837,6 +743,22 @@ function App() {
     return plans;
   }, [waterChangePlans, planFilter]);
 
+  const handleRuleChange = async (_config: RuleConfig, reevaluate: boolean) => {
+    if (reevaluate) {
+      setIsLoading(true);
+      try {
+        const data = await dataService.reevaluateAllRecords();
+        setWaterRecords(data.waterRecords);
+        setAlerts(data.alerts);
+      } catch (error) {
+        console.error("Failed to re-evaluate records:", error);
+        alert("重新评估历史数据失败，请重试。");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
   const handleClearAllData = async () => {
     if (!window.confirm("确定要清空所有演示数据吗？此操作不可恢复。")) {
       setClearConfirmOpen(false);
@@ -922,6 +844,7 @@ function App() {
           <button className="secondary-action" onClick={() => setClearConfirmOpen(true)}>
             🗑️ 数据管理
           </button>
+          <RuleConfigPanel onRuleChange={handleRuleChange} />
         </div>
       </section>
 

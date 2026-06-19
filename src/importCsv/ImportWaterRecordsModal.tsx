@@ -16,100 +16,18 @@ import type { EditableRow, EditableParseResult, ImportRecordItem, PreparedRecord
 import type { TankProfile, RecordStatus, WaterMetrics } from "../db/types";
 import { generateAlertsFromRecord } from "../alertCenter/AlertCenter";
 import type { AlertItem, AlertMetricValues } from "../alertCenter/types";
-import { getEffectiveThresholds } from "../db/tankTemplates";
-import { TEMPLATE_METRIC_UNITS, TEMPLATE_METRIC_LABELS } from "../db/tankTemplates";
+import { evaluateRecordStatus as ruleEvaluateRecordStatus } from "../ruleConfig/ruleEngine";
 
-const METRIC_RANGES: Record<
-  keyof Omit<WaterMetrics, "waterChange">,
-  { ok: [number, number]; watch: [number, number]; unit: string; label: string }
-> = {
-  ph: { ok: [6.5, 7.5], watch: [6.0, 8.0], unit: "", label: "pH" },
-  ammonia: { ok: [0, 0], watch: [0, 0.25], unit: "ppm", label: "氨氮" },
-  nitrite: { ok: [0, 0], watch: [0, 0.5], unit: "ppm", label: "亚硝酸盐" },
-  nitrate: { ok: [0, 20], watch: [0, 40], unit: "ppm", label: "硝酸盐" },
-  hardness: { ok: [4, 12], watch: [2, 18], unit: "dGH", label: "硬度" },
-  temperature: { ok: [24, 28], watch: [20, 32], unit: "°C", label: "温度" },
-};
-
-const CUSTOMIZABLE_METRICS = ["ph", "nitrate", "hardness", "temperature"] as const;
-
-function evaluateMetric(
-  key: keyof Omit<WaterMetrics, "waterChange">,
-  raw: string,
-  tank?: TankProfile
-): RecordStatus {
-  const value = parseFloat(raw);
-  if (isNaN(value)) return "稳定";
-  
-  let range = METRIC_RANGES[key];
-  if (tank && CUSTOMIZABLE_METRICS.includes(key as typeof CUSTOMIZABLE_METRICS[number])) {
-    const eff = getEffectiveThresholds(tank, key as typeof CUSTOMIZABLE_METRICS[number]);
-    const unit = TEMPLATE_METRIC_UNITS[key as typeof CUSTOMIZABLE_METRICS[number]];
-    const label = TEMPLATE_METRIC_LABELS[key as typeof CUSTOMIZABLE_METRICS[number]];
-    range = { ok: eff.ok, watch: eff.watch, unit, label };
-  }
-  
-  if (value < range.watch[0] || value > range.watch[1]) return "异常";
-  if (value < range.ok[0] || value > range.ok[1]) return "关注";
-  return "稳定";
-}
-
-function evaluateRecordStatus(
+function evaluateRecordWithRemark(
   metrics: WaterMetrics,
   remark: string,
   tank?: TankProfile
 ): { status: RecordStatus; note: string } {
-  const metricKeys = Object.keys(METRIC_RANGES) as (keyof Omit<WaterMetrics, "waterChange">)[];
-  const issues: { key: keyof Omit<WaterMetrics, "waterChange">; status: RecordStatus }[] = [];
-  let overall: RecordStatus = "稳定";
-
-  for (const key of metricKeys) {
-    const raw = metrics[key];
-    if (!raw.trim()) continue;
-    const st = evaluateMetric(key, raw, tank);
-    if (st !== "稳定") {
-      issues.push({ key, status: st });
-    }
-    if (st === "异常") overall = "异常";
-    else if (st === "关注" && overall !== "异常") overall = "关注";
-  }
-
-  let note = "";
-  if (issues.length === 0) {
-    note = "各项指标正常，继续保持";
-  } else {
-    const dangerItems = issues.filter((i) => i.status === "异常");
-    const watchItems = issues.filter((i) => i.status === "关注");
-    const parts: string[] = [];
-    if (dangerItems.length > 0) {
-      parts.push(
-        dangerItems
-          .map((i) => {
-            const r = METRIC_RANGES[i.key];
-            return `${r.label}${metrics[i.key]}${r.unit}异常`;
-          })
-          .join("、")
-      );
-    }
-    if (watchItems.length > 0) {
-      parts.push(
-        watchItems
-          .map((i) => `${METRIC_RANGES[i.key].label}${metrics[i.key]}需关注`)
-          .join("、")
-      );
-    }
-    note = parts.join("；");
-    if (metrics.waterChange.trim()) {
-      note += `；本次换水${metrics.waterChange}`;
-    }
-    if (dangerItems.length > 0) {
-      note += "，建议立即处理";
-    }
-  }
+  const { status, note } = ruleEvaluateRecordStatus(metrics, tank);
   if (remark.trim()) {
-    note = note ? `${note}；${remark}` : remark;
+    return { status, note: note ? `${note}；${remark}` : remark };
   }
-  return { status: overall, note };
+  return { status, note };
 }
 
 export interface ImportWaterRecordsModalProps {
@@ -299,7 +217,7 @@ export function ImportWaterRecordsModal({
         ? tanks.find((t) => t.id === row.matchedTankId)
         : tanks.find((t) => t.name === row.tankName);
 
-      const { status, note } = evaluateRecordStatus(row.metrics, row.remark, tank);
+      const { status, note } = evaluateRecordWithRemark(row.metrics, row.remark, tank);
 
       const tankName = tank?.name || row.tankName;
       const tankId = tank?.id;
@@ -593,7 +511,7 @@ export function ImportWaterRecordsModal({
                           const tank = row.matchedTankId
                             ? tanks.find((t) => t.id === row.matchedTankId)
                             : tanks.find((t) => t.name === row.tankName);
-                          const { status, note } = evaluateRecordStatus(
+                          const { status, note } = evaluateRecordWithRemark(
                             row.metrics,
                             row.remark,
                             tank

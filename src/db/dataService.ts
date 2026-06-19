@@ -1,7 +1,9 @@
 import { db } from "./database";
 import { generateSeedData, hasSeedDataBeenLoaded, markSeedDataAsLoaded } from "./seedData";
 import type { TankProfile, WaterRecord, WaterChangePlan, AppData, Customer } from "./types";
-import type { AlertItem, RetestTask, TreatmentAction, AlertMetric } from "../alertCenter/types";
+import type { AlertItem, RetestTask, TreatmentAction, AlertMetric, AlertMetricValues } from "../alertCenter/types";
+import { getRetestDelayConfig, evaluateRecordStatus as evaluateRecordStatusFromRule } from "../ruleConfig/ruleEngine";
+import { generateAlertsFromRecord } from "../alertCenter/AlertCenter";
 
 export class DataService {
   private initialized = false;
@@ -316,13 +318,8 @@ export class DataService {
     treatmentNote: string,
     handler: string
   ): Promise<{ retestTask: RetestTask; updatedAlert: AlertItem }> {
-    const dueDaysMap: Record<TreatmentAction, number> = {
-      "复测": 1,
-      "换水": 3,
-      "停喂": 2,
-      "补菌": 3,
-    };
-    const dueDays = dueDaysMap[treatment] ?? 2;
+    const retestDelays = getRetestDelayConfig();
+    const dueDays = retestDelays[treatment] ?? 2;
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + dueDays);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -391,6 +388,47 @@ export class DataService {
     }
 
     return { task: updatedTask, alert: updatedAlert };
+  }
+
+  async reevaluateAllRecords(): Promise<AppData> {
+    const tanks = await this.getTanks();
+    const records = await this.getWaterRecords();
+    const allAlerts = await this.getAlerts();
+
+    for (const record of records) {
+      const tank = record.tankId ? tanks.find(t => t.id === record.tankId) : undefined;
+      const { status, note } = evaluateRecordStatusFromRule(record.metrics, tank);
+      const updatedRecord: WaterRecord = { ...record, status, note };
+      await db.put("waterRecords", updatedRecord);
+    }
+
+    for (const alert of allAlerts) {
+      if (alert.status === "pending") {
+        await db.delete("alerts", alert.id);
+      }
+    }
+
+    const newAlerts: Omit<AlertItem, "id">[] = [];
+    for (const record of records) {
+      const tank = record.tankId ? tanks.find(t => t.id === record.tankId) : undefined;
+      const tankType = tank?.tankType || "草缸";
+      const customThresholds = tank?.customThresholds;
+      const generatedAlerts = generateAlertsFromRecord(
+        record.id,
+        record.tankName,
+        record.tankId,
+        tankType,
+        record.metrics as unknown as AlertMetricValues,
+        record.recordedAt,
+        customThresholds
+      );
+      for (const alert of generatedAlerts) {
+        newAlerts.push({ ...alert, id: undefined! } as Omit<AlertItem, "id">);
+      }
+    }
+    await this.addAlerts(newAlerts);
+
+    return this.getAllData();
   }
 
   async clearAllData(): Promise<AppData> {

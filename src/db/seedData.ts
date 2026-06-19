@@ -1,5 +1,6 @@
 import type { TankProfile, WaterRecord, WaterChangePlan, WaterMetrics, Customer } from "./types";
 import type { AlertItem } from "../alertCenter/types";
+import { evaluateRecordStatus as ruleEvaluateRecordStatus } from "../ruleConfig/ruleEngine";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -32,88 +33,8 @@ const createWaterMetrics = (data: Partial<WaterMetrics>): WaterMetrics => ({
   ...data,
 });
 
-const METRIC_RANGES: Record<
-  keyof Omit<WaterMetrics, "waterChange">,
-  { ok: [number, number]; watch: [number, number]; unit: string; label: string }
-> = {
-  ph: { ok: [6.5, 7.5], watch: [6.0, 8.0], unit: "", label: "pH" },
-  ammonia: { ok: [0, 0], watch: [0, 0.25], unit: "ppm", label: "氨氮" },
-  nitrite: { ok: [0, 0], watch: [0, 0.5], unit: "ppm", label: "亚硝酸盐" },
-  nitrate: { ok: [0, 20], watch: [0, 40], unit: "ppm", label: "硝酸盐" },
-  hardness: { ok: [4, 12], watch: [2, 18], unit: "dGH", label: "硬度" },
-  temperature: { ok: [24, 28], watch: [20, 32], unit: "°C", label: "温度" },
-};
-
-function evaluateMetric(
-  key: keyof Omit<WaterMetrics, "waterChange">,
-  raw: string
-): "稳定" | "关注" | "异常" {
-  const value = parseFloat(raw);
-  if (isNaN(value)) return "稳定";
-  const range = METRIC_RANGES[key];
-  if (value < range.watch[0] || value > range.watch[1]) return "异常";
-  if (value < range.ok[0] || value > range.ok[1]) return "关注";
-  return "稳定";
-}
-
-function evaluateRecordStatus(metrics: WaterMetrics): {
-  status: "稳定" | "关注" | "异常";
-  note: string;
-} {
-  const metricKeys = Object.keys(METRIC_RANGES) as (keyof Omit<
-    WaterMetrics,
-    "waterChange"
-  >)[];
-  const issues: {
-    key: keyof Omit<WaterMetrics, "waterChange">;
-    status: "稳定" | "关注" | "异常";
-  }[] = [];
-  let overall: "稳定" | "关注" | "异常" = "稳定";
-
-  for (const key of metricKeys) {
-    const raw = metrics[key];
-    if (!raw.trim()) continue;
-    const st = evaluateMetric(key, raw);
-    if (st !== "稳定") {
-      issues.push({ key, status: st });
-    }
-    if (st === "异常") overall = "异常";
-    else if (st === "关注" && overall !== "异常") overall = "关注";
-  }
-
-  let note = "";
-  if (issues.length === 0) {
-    note = "各项指标正常，继续保持";
-  } else {
-    const dangerItems = issues.filter((i) => i.status === "异常");
-    const watchItems = issues.filter((i) => i.status === "关注");
-    const parts: string[] = [];
-    if (dangerItems.length > 0) {
-      parts.push(
-        dangerItems
-          .map((i) => {
-            const r = METRIC_RANGES[i.key];
-            return `${r.label}${metrics[i.key]}${r.unit}异常`;
-          })
-          .join("、")
-      );
-    }
-    if (watchItems.length > 0) {
-      parts.push(
-        watchItems
-          .map((i) => `${METRIC_RANGES[i.key].label}${metrics[i.key]}需关注`)
-          .join("、")
-      );
-    }
-    note = parts.join("；");
-    if (metrics.waterChange.trim()) {
-      note += `；本次换水${metrics.waterChange}`;
-    }
-    if (dangerItems.length > 0) {
-      note += "，建议立即处理";
-    }
-  }
-  return { status: overall, note };
+function evaluateRecordStatusLocal(metrics: WaterMetrics) {
+  return ruleEvaluateRecordStatus(metrics);
 }
 
 export function generateSeedData() {
@@ -229,7 +150,7 @@ export function generateSeedData() {
         hardness: "8",
         temperature: "25.5",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "6.8",
           ammonia: "0",
@@ -253,7 +174,7 @@ export function generateSeedData() {
         hardness: "7",
         temperature: "24.0",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "7.0",
           ammonia: "0",
@@ -277,7 +198,7 @@ export function generateSeedData() {
         hardness: "9",
         temperature: "27.0",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "6.5",
           ammonia: "0",
@@ -302,7 +223,7 @@ export function generateSeedData() {
         temperature: "25.0",
         waterChange: "30%",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "6.9",
           ammonia: "0",
@@ -328,7 +249,7 @@ export function generateSeedData() {
         temperature: "26.0",
         waterChange: "20%",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "8.1",
           ammonia: "0.01",
@@ -353,7 +274,7 @@ export function generateSeedData() {
         hardness: "11",
         temperature: "26.5",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "8.2",
           ammonia: "0",
@@ -378,7 +299,7 @@ export function generateSeedData() {
         temperature: "25.5",
         waterChange: "20%",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "8.3",
           ammonia: "0",
@@ -403,7 +324,7 @@ export function generateSeedData() {
         hardness: "6",
         temperature: "28.0",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "7.0",
           ammonia: "0.08",
@@ -427,7 +348,7 @@ export function generateSeedData() {
         hardness: "6",
         temperature: "27.5",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "7.2",
           ammonia: "0.05",
@@ -451,7 +372,7 @@ export function generateSeedData() {
         hardness: "7",
         temperature: "27.0",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "7.3",
           ammonia: "0.03",
@@ -476,7 +397,7 @@ export function generateSeedData() {
         temperature: "26.5",
         waterChange: "25%",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "7.4",
           ammonia: "0.02",
@@ -501,7 +422,7 @@ export function generateSeedData() {
         hardness: "14",
         temperature: "26.5",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "8.0",
           ammonia: "0",
@@ -525,7 +446,7 @@ export function generateSeedData() {
         hardness: "13",
         temperature: "26.0",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "8.1",
           ammonia: "0",
@@ -550,7 +471,7 @@ export function generateSeedData() {
         temperature: "25.0",
         waterChange: "30%",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "6.6",
           ammonia: "0",
@@ -575,7 +496,7 @@ export function generateSeedData() {
         hardness: "7",
         temperature: "25.5",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "6.7",
           ammonia: "0",
@@ -600,7 +521,7 @@ export function generateSeedData() {
         temperature: "26.5",
         waterChange: "15%",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "8.2",
           ammonia: "0",
@@ -625,7 +546,7 @@ export function generateSeedData() {
         hardness: "9",
         temperature: "27.5",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "7.9",
           ammonia: "0.08",
@@ -650,7 +571,7 @@ export function generateSeedData() {
         temperature: "25.0",
         waterChange: "25%",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "6.9",
           ammonia: "0",
@@ -675,7 +596,7 @@ export function generateSeedData() {
         hardness: "7",
         temperature: "24.5",
       }),
-      ...evaluateRecordStatus(
+      ...evaluateRecordStatusLocal(
         createWaterMetrics({
           ph: "6.7",
           ammonia: "0",

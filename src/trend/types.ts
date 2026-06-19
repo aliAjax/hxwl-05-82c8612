@@ -1,3 +1,14 @@
+import {
+  getMetricRule,
+  evaluateDataPoint,
+} from "../ruleConfig/ruleEngine";
+import {
+  RULE_METRICS as TREND_METRICS_INTERNAL,
+  RULE_METRIC_LABELS,
+  RULE_METRIC_UNITS,
+} from "../ruleConfig/types";
+import type { RuleMetric, MetricRule } from "../ruleConfig/types";
+
 export type TrendMetric = "ph" | "ammonia" | "nitrate" | "hardness" | "temperature";
 
 export type TrendTankType = "草缸" | "海缸" | "三湖缸" | "繁殖缸";
@@ -33,73 +44,30 @@ export interface MetricRange {
   color: string;
 }
 
-export const METRIC_RANGES: Record<TrendMetric, MetricRange> = {
-  ph: {
-    ok: [6.5, 7.5],
-    warning: [6.0, 8.0],
-    unit: "",
-    label: "pH",
-    color: "#0891b2",
-  },
-  ammonia: {
-    ok: [0, 0],
-    warning: [0, 0.25],
-    unit: "ppm",
-    label: "氨氮",
-    color: "#f59e0b",
-  },
-  nitrate: {
-    ok: [0, 20],
-    warning: [0, 40],
-    unit: "ppm",
-    label: "硝酸盐",
-    color: "#8b5cf6",
-  },
-  hardness: {
-    ok: [4, 12],
-    warning: [2, 18],
-    unit: "dGH",
-    label: "硬度",
-    color: "#0f766e",
-  },
-  temperature: {
-    ok: [24, 28],
-    warning: [20, 32],
-    unit: "°C",
-    label: "温度",
-    color: "#16a34a",
-  },
+const TREND_METRIC_LIST: TrendMetric[] = ["ph", "ammonia", "nitrate", "hardness", "temperature"];
+
+const METRIC_RANGE_COLORS: Record<TrendMetric, string> = {
+  ph: "#0891b2",
+  ammonia: "#f59e0b",
+  nitrate: "#8b5cf6",
+  hardness: "#0f766e",
+  temperature: "#16a34a",
 };
 
-const TANK_TYPE_RANGES: Record<
-  TrendTankType,
-  Partial<Record<TrendMetric, { ok: [number, number]; warning: [number, number] }>>
-> = {
-  草缸: {
-    ph: { ok: [6.0, 7.0], warning: [5.5, 7.5] },
-    nitrate: { ok: [0, 20], warning: [0, 40] },
-    hardness: { ok: [4, 10], warning: [2, 14] },
-    temperature: { ok: [24, 28], warning: [22, 30] },
-  },
-  海缸: {
-    ph: { ok: [8.0, 8.4], warning: [7.8, 8.6] },
-    nitrate: { ok: [0, 5], warning: [0, 10] },
-    hardness: { ok: [8, 12], warning: [7, 15] },
-    temperature: { ok: [25, 27], warning: [24, 28] },
-  },
-  三湖缸: {
-    ph: { ok: [7.8, 8.6], warning: [7.5, 9.0] },
-    nitrate: { ok: [0, 30], warning: [0, 60] },
-    hardness: { ok: [10, 20], warning: [8, 25] },
-    temperature: { ok: [25, 28], warning: [23, 30] },
-  },
-  繁殖缸: {
-    ph: { ok: [6.5, 7.2], warning: [6.0, 7.6] },
-    nitrate: { ok: [0, 10], warning: [0, 20] },
-    hardness: { ok: [3, 8], warning: [2, 12] },
-    temperature: { ok: [25, 27], warning: [24, 28] },
-  },
-};
+export const METRIC_RANGES: Record<TrendMetric, MetricRange> = (() => {
+  const result: Partial<Record<TrendMetric, MetricRange>> = {};
+  for (const m of TREND_METRIC_LIST) {
+    const rule = getMetricRule("草缸", m as RuleMetric);
+    result[m] = {
+      ok: rule.ok,
+      warning: rule.watch,
+      unit: rule.unit,
+      label: rule.label,
+      color: METRIC_RANGE_COLORS[m],
+    };
+  }
+  return result as Record<TrendMetric, MetricRange>;
+})();
 
 export const TREND_METRICS: TrendMetric[] = [
   "ph",
@@ -108,8 +76,6 @@ export const TREND_METRICS: TrendMetric[] = [
   "hardness",
   "temperature",
 ];
-
-const VALID_TANK_TYPES: TrendTankType[] = ["草缸", "海缸", "三湖缸", "繁殖缸"];
 
 export function getMetricRangeByTankType(
   metric: TrendMetric,
@@ -126,36 +92,12 @@ export function getMetricRangeByTankType(
     };
   }
   if (!tankType) return baseRange;
-  const validType = VALID_TANK_TYPES.includes(tankType as TrendTankType)
-    ? (tankType as TrendTankType)
-    : null;
-  if (!validType) return baseRange;
-  const typeOverride = TANK_TYPE_RANGES[validType][metric];
-  if (!typeOverride) return baseRange;
+  const rule = getMetricRule(tankType, metric as RuleMetric);
   return {
     ...baseRange,
-    ok: typeOverride.ok,
-    warning: typeOverride.warning,
+    ok: rule.ok,
+    warning: rule.watch,
   };
 }
 
-export function evaluateDataPoint(
-  metric: TrendMetric,
-  value: number,
-  tankType?: string,
-  customThresholds?: TrendCustomThresholds
-): "normal" | "warning" | "danger" {
-  const range = getMetricRangeByTankType(metric, tankType, customThresholds);
-  const isZeroRange = range.ok[0] === 0 && range.ok[1] === 0;
-
-  if (value < range.warning[0] || value > range.warning[1]) return "danger";
-
-  if (isZeroRange) {
-    if (value <= 0) return "normal";
-    if (value <= range.warning[1] * 0.5) return "warning";
-    return "danger";
-  }
-
-  if (value < range.ok[0] || value > range.ok[1]) return "warning";
-  return "normal";
-}
+export { evaluateDataPoint };

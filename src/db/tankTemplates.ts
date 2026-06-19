@@ -1,4 +1,5 @@
 import type { ThresholdMetric, CustomThresholds } from "./types";
+import { loadRuleConfig } from "../ruleConfig/ruleEngine";
 
 export type TankTemplateType = "草缸" | "海缸" | "三湖缸" | "繁殖缸";
 
@@ -82,10 +83,16 @@ export const TEMPLATE_METRIC_ORDER: ThresholdMetric[] = [
 export function getTemplateThresholds(
   tankType: string
 ): Record<ThresholdMetric, { ok: [number, number]; watch: [number, number] }> {
+  const config = loadRuleConfig();
   const validType = TANK_TEMPLATE_TYPES.includes(tankType as TankTemplateType)
     ? (tankType as TankTemplateType)
     : "草缸";
-  return TANK_TEMPLATES[validType].thresholds;
+  const result: Partial<Record<ThresholdMetric, { ok: [number, number]; watch: [number, number] }>> = {};
+  for (const key of TEMPLATE_METRIC_ORDER) {
+    const rule = config.tankTypeRules[validType][key];
+    result[key] = { ok: rule.ok, watch: rule.watch };
+  }
+  return result as Record<ThresholdMetric, { ok: [number, number]; watch: [number, number] }>;
 }
 
 export function cloneTemplateThresholds(

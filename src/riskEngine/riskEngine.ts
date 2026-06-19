@@ -3,8 +3,8 @@ import {
   RiskFactor,
   RiskLevel,
   TankRiskContext,
-  RISK_LEVEL_THRESHOLDS,
-  RISK_SCORE_CONFIG,
+  getRiskLevelThresholds,
+  getRiskScoreConfig,
   RiskFactorType,
 } from "./types";
 import type {
@@ -19,7 +19,6 @@ import {
   evaluateMetricValue,
   getMetricThreshold,
   getAlertMetricKeys,
-  DEFAULT_THRESHOLDS,
 } from "../alertCenter/thresholdConfig";
 
 const METRIC_LABELS: Record<AlertMetric, string> = {
@@ -101,7 +100,7 @@ function detectContinuousRise(
   }
 
   const threshold = getMetricThreshold(tankType, metric);
-  const rangeSpan = threshold.mild[1] - threshold.mild[0] || 1;
+  const rangeSpan = threshold.watch[1] - threshold.watch[0] || 1;
   const relativeRise = totalRise / rangeSpan;
 
   const consecutiveRises = riseCount >= recent.length - 1;
@@ -116,8 +115,8 @@ function detectContinuousRise(
       metricLabel: METRIC_LABELS[metric],
       description: `${METRIC_LABELS[metric]}连续${recent.length}次检测呈上升趋势`,
       score: isSevere
-        ? RISK_SCORE_CONFIG.continuous_rise_severe
-        : RISK_SCORE_CONFIG.continuous_rise_mild,
+        ? getRiskScoreConfig().continuous_rise_severe
+        : getRiskScoreConfig().continuous_rise_mild,
       evidence: `近${recent.length}次：${recent
         .map((v) => v.value)
         .join(" → ")}`,
@@ -155,7 +154,7 @@ function detectRapidFluctuation(
   }
 
   const threshold = getMetricThreshold(tankType, metric);
-  const rangeSpan = threshold.mild[1] - threshold.mild[0] || 1;
+  const rangeSpan = threshold.watch[1] - threshold.watch[0] || 1;
   const maxVal = Math.max(...recent.map((v) => v.value));
   const minVal = Math.min(...recent.map((v) => v.value));
   const totalVariation = maxVal - minVal;
@@ -173,8 +172,8 @@ function detectRapidFluctuation(
       metricLabel: METRIC_LABELS[metric],
       description: `${METRIC_LABELS[metric]}近期波动剧烈，水质不稳定`,
       score: isSevere
-        ? RISK_SCORE_CONFIG.rapid_fluctuation_severe
-        : RISK_SCORE_CONFIG.rapid_fluctuation_mild,
+        ? getRiskScoreConfig().rapid_fluctuation_severe
+        : getRiskScoreConfig().rapid_fluctuation_mild,
       evidence: `近${recent.length}次波动幅度：${minVal} ~ ${maxVal}，上下交替${upDownChanges}次`,
     };
   }
@@ -226,8 +225,8 @@ function detectNoWaterChangeLong(
         hasOverduePlan ? "，且换水计划已逾期" : ""
       }`,
       score: isSevere
-        ? RISK_SCORE_CONFIG.no_water_change_severe
-        : RISK_SCORE_CONFIG.no_water_change_mild,
+        ? getRiskScoreConfig().no_water_change_severe
+        : getRiskScoreConfig().no_water_change_mild,
       evidence: `上次换水：${
         lastWaterChangeDate
           ? `${lastWaterChangeDate.getFullYear()}-${String(
@@ -246,7 +245,7 @@ function detectNoWaterChangeLong(
       type: "no_water_change_long",
       severity: "mild",
       description: `换水计划已逾期，建议尽快换水`,
-      score: RISK_SCORE_CONFIG.no_water_change_mild,
+      score: getRiskScoreConfig().no_water_change_mild,
       evidence: `逾期计划：${overduePlans.length}个`,
     };
   }
@@ -325,8 +324,8 @@ function detectRetestStillAbnormal(
           hasRetest ? "复测处理" : "多次检测"
         }后仍持续异常`,
         score: isSevere
-          ? RISK_SCORE_CONFIG.retest_still_abnormal_severe
-          : RISK_SCORE_CONFIG.retest_still_abnormal_mild,
+          ? getRiskScoreConfig().retest_still_abnormal_severe
+          : getRiskScoreConfig().retest_still_abnormal_mild,
         evidence: evidenceParts.join("，"),
       });
     }
@@ -356,12 +355,12 @@ function detectSingleThresholdAbnormalities(
       metric,
       metricLabel: METRIC_LABELS[metric],
       description: `${METRIC_LABELS[metric]} ${raw}${
-        evalResult.threshold.unit
+        evalResult.rule.unit
       } ${isSevere ? "严重" : "轻微"}超标`,
       score: isSevere
-        ? RISK_SCORE_CONFIG.single_threshold_severe
-        : RISK_SCORE_CONFIG.single_threshold_mild,
-      evidence: `安全范围：${evalResult.threshold.ok[0]}~${evalResult.threshold.ok[1]}${evalResult.threshold.unit}`,
+        ? getRiskScoreConfig().single_threshold_severe
+        : getRiskScoreConfig().single_threshold_mild,
+      evidence: `安全范围：${evalResult.rule.ok[0]}~${evalResult.rule.ok[1]}${evalResult.rule.unit}`,
     });
   }
 
@@ -388,7 +387,7 @@ function detectCapacitySensitivity(
     type: "capacity_sensitivity",
     severity: "mild",
     description: parts.join("，") + "，异常影响被放大",
-    score: RISK_SCORE_CONFIG.capacity_sensitivity,
+    score: getRiskScoreConfig().capacity_sensitivity,
   };
 }
 
@@ -405,8 +404,8 @@ function detectMultipleAbnormalMetrics(
       severity: isSevere ? "severe" : "mild",
       description: `同时有${severeCount + mildCount}项指标异常(${severeCount}项严重)`,
       score: isSevere
-        ? RISK_SCORE_CONFIG.multiple_metrics_bonus * 2
-        : RISK_SCORE_CONFIG.multiple_metrics_bonus,
+        ? getRiskScoreConfig().multiple_metrics_bonus * 2
+        : getRiskScoreConfig().multiple_metrics_bonus,
       evidence: singleFactors
         .map((f) => `${f.metricLabel}${f.severity === "severe" ? "(重)" : "(轻)"}`)
         .join("、"),
@@ -416,9 +415,9 @@ function detectMultipleAbnormalMetrics(
 }
 
 function calculateRiskLevel(totalScore: number): RiskLevel {
-  if (totalScore >= RISK_LEVEL_THRESHOLDS.high) return "严重风险";
-  if (totalScore >= RISK_LEVEL_THRESHOLDS.medium) return "高风险";
-  if (totalScore >= RISK_LEVEL_THRESHOLDS.low) return "中风险";
+  if (totalScore >= getRiskLevelThresholds().high) return "严重风险";
+  if (totalScore >= getRiskLevelThresholds().medium) return "高风险";
+  if (totalScore >= getRiskLevelThresholds().low) return "中风险";
   return "低风险";
 }
 

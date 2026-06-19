@@ -64,7 +64,7 @@ function buildTankTrend(
         metric,
         value,
         tank.tankType,
-        customThresholds
+        tank.customThresholds as Parameters<typeof evaluateDataPoint>[3]
       );
       points.push({ timestamp, value, status });
     }
