@@ -1,5 +1,4 @@
-import type { Customer } from "../db/types";
-import type { TankProfile, WaterRecord, WaterChangePlan, RecordStatus } from "../App";
+import type { Customer, TankProfile, WaterRecord, WaterChangePlan, RecordStatus } from "../db/types";
 import type { RiskAssessmentResult, RiskLevel } from "../riskEngine";
 
 export interface TankDashboardInfo {

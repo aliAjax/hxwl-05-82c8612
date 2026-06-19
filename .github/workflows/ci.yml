@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 类型检查与构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci --ignore-scripts
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 生产构建
+        run: npm run build
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 1
+
+  unit:
+    name: 纯函数单元测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci --ignore-scripts
+
+      - name: 运行 Vitest
+        run: npm run test:unit -- --reporter=default --reporter=github-actions
+        env:
+          CI: "true"
+          TZ: "UTC"
+
+      - name: 上传测试覆盖率
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  smoke:
+    name: 浏览器冒烟测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装依赖
+        run: npm ci --ignore-scripts
+
+      - name: 安装 Playwright 浏览器依赖
+        run: npx playwright install --with-deps chromium
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: 运行冒烟测试
+        run: npm run test:smoke
+        env:
+          CI: "true"
+          TZ: "UTC"
+          HOME: "/root"
+
+      - name: 上传冒烟测试产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
+          retention-days: 14

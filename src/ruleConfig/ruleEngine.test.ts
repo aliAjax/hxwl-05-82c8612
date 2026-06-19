@@ -1,32 +1,11 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   evaluateMetricValue,
   evaluateRecordStatus,
   getMetricRule,
-  DEFAULT_TANK_TYPE_RULES,
 } from "./ruleEngine";
-import type { WaterMetrics } from "../db/types";
-import type { RuleMetric, TankType } from "./types";
-
-class LocalStorageMock {
-  private store: Record<string, string> = {};
-  getItem(key: string): string | null {
-    return this.store[key] || null;
-  }
-  setItem(key: string, value: string): void {
-    this.store[key] = String(value);
-  }
-  removeItem(key: string): void {
-    delete this.store[key];
-  }
-  clear(): void {
-    this.store = {};
-  }
-}
-
-beforeEach(() => {
-  (globalThis as any).localStorage = new LocalStorageMock();
-});
+import type { WaterMetrics, CustomThresholds, MetricRange } from "../db/types";
+import type { TankType } from "./types";
 
 describe("ruleEngine - 草缸阈值判定", () => {
   const tankType = "草缸";
@@ -459,8 +438,8 @@ describe("ruleEngine - 记录整体状态评估", () => {
 
 describe("ruleEngine - 自定义阈值", () => {
   it("自定义 pH 阈值应覆盖默认规则", () => {
-    const customThresholds = {
-      ph: { ok: [6.5, 7.5], watch: [6.0, 8.0] },
+    const customThresholds: CustomThresholds = {
+      ph: { ok: [6.5, 7.5] as MetricRange["ok"], watch: [6.0, 8.0] as MetricRange["watch"] },
     };
     const result = evaluateMetricValue("草缸", "ph", "7.2", customThresholds);
     expect(result).not.toBeNull();
@@ -468,8 +447,8 @@ describe("ruleEngine - 自定义阈值", () => {
   });
 
   it("自定义阈值外应判定为关注", () => {
-    const customThresholds = {
-      ph: { ok: [6.5, 7.5], watch: [6.0, 8.0] },
+    const customThresholds: CustomThresholds = {
+      ph: { ok: [6.5, 7.5] as MetricRange["ok"], watch: [6.0, 8.0] as MetricRange["watch"] },
     };
     const result = evaluateMetricValue("草缸", "ph", "7.8", customThresholds);
     expect(result).not.toBeNull();
@@ -477,8 +456,8 @@ describe("ruleEngine - 自定义阈值", () => {
   });
 
   it("自定义硝酸盐阈值应生效", () => {
-    const customThresholds = {
-      nitrate: { ok: [0, 30], watch: [0, 50] },
+    const customThresholds: CustomThresholds = {
+      nitrate: { ok: [0, 30] as MetricRange["ok"], watch: [0, 50] as MetricRange["watch"] },
     };
     const result = evaluateMetricValue("草缸", "nitrate", "25", customThresholds);
     expect(result).not.toBeNull();
@@ -486,8 +465,8 @@ describe("ruleEngine - 自定义阈值", () => {
   });
 
   it("记录评估应支持自定义阈值", () => {
-    const customThresholds = {
-      ph: { ok: [7.0, 8.0], watch: [6.5, 8.5] },
+    const customThresholds: CustomThresholds = {
+      ph: { ok: [7.0, 8.0] as MetricRange["ok"], watch: [6.5, 8.5] as MetricRange["watch"] },
     };
     const metrics: WaterMetrics = {
       ph: "7.5",

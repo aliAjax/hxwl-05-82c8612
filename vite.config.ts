@@ -12,8 +12,9 @@ export default defineConfig({
     port: 5105,
   },
   test: {
-    environment: "node",
     globals: true,
+    environment: "node",
+    setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 });
