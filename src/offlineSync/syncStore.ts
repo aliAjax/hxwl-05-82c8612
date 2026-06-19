@@ -18,6 +18,8 @@ import type {
 } from "./types";
 import { getRetestDelayConfig, evaluateMetricValue } from "../ruleConfig";
 import type { RuleMetric } from "../ruleConfig";
+import { auditLogger } from "../auditLog/auditLogger";
+import type { AuditEntityType } from "../auditLog/types";
 
 const STORAGE_KEYS = {
   QUEUE: "hxwl_offline_sync_queue",
@@ -213,8 +215,28 @@ class OfflineSyncStore {
     if (existing) {
       const idx = records.findIndex((r) => r.id === existing!.id);
       records[idx] = result;
+      auditLogger
+        .logUpdate(
+          "waterRecord",
+          result.id,
+          existing as unknown as Record<string, unknown>,
+          result as unknown as Record<string, unknown>,
+          {
+            tankId: result.tankId,
+            tankName: result.tankName,
+            detail: "离线编辑水质记录",
+          }
+        )
+        .catch(() => {});
     } else {
       records.unshift(result);
+      auditLogger
+        .logCreate("waterRecord", result as unknown as Record<string, unknown>, {
+          tankId: result.tankId,
+          tankName: result.tankName,
+          detail: "离线新增水质记录",
+        })
+        .catch(() => {});
     }
 
     this.saveToStorage(
@@ -255,10 +277,21 @@ class OfflineSyncStore {
   }
 
   deleteWaterRecord(id: string) {
-    const records = this.getWaterRecords().filter((r) => r.id !== id);
+    const records = this.getWaterRecords();
+    const existing = records.find((r) => r.id === id);
+    const filtered = records.filter((r) => r.id !== id);
+    if (existing) {
+      auditLogger
+        .logDelete("waterRecord", existing as unknown as Record<string, unknown>, {
+          tankId: existing.tankId,
+          tankName: existing.tankName,
+          detail: "离线删除水质记录",
+        })
+        .catch(() => {});
+    }
     this.saveToStorage(
       STORAGE_KEYS.WATER_RECORDS,
-      JSON.stringify(records)
+      JSON.stringify(filtered)
     );
     this.notifyListeners();
   }
@@ -299,8 +332,28 @@ class OfflineSyncStore {
     if (existing) {
       const idx = plans.findIndex((p) => p.id === existing!.id);
       plans[idx] = result;
+      auditLogger
+        .logUpdate(
+          "waterChangePlan",
+          result.id,
+          existing as unknown as Record<string, unknown>,
+          result as unknown as Record<string, unknown>,
+          {
+            tankId: result.tankId,
+            tankName: result.tankName,
+            detail: result.completedAt ? "离线完成换水计划" : "离线编辑换水计划",
+          }
+        )
+        .catch(() => {});
     } else {
       plans.unshift(result);
+      auditLogger
+        .logCreate("waterChangePlan", result as unknown as Record<string, unknown>, {
+          tankId: result.tankId,
+          tankName: result.tankName,
+          detail: "离线新增换水计划",
+        })
+        .catch(() => {});
     }
 
     this.saveToStorage(STORAGE_KEYS.WATER_PLANS, JSON.stringify(plans));
@@ -335,8 +388,19 @@ class OfflineSyncStore {
   }
 
   deleteWaterPlan(id: string) {
-    const plans = this.getWaterPlans().filter((p) => p.id !== id);
-    this.saveToStorage(STORAGE_KEYS.WATER_PLANS, JSON.stringify(plans));
+    const plans = this.getWaterPlans();
+    const existing = plans.find((p) => p.id === id);
+    const filtered = plans.filter((p) => p.id !== id);
+    if (existing) {
+      auditLogger
+        .logDelete("waterChangePlan", existing as unknown as Record<string, unknown>, {
+          tankId: existing.tankId,
+          tankName: existing.tankName,
+          detail: "离线删除换水计划",
+        })
+        .catch(() => {});
+    }
+    this.saveToStorage(STORAGE_KEYS.WATER_PLANS, JSON.stringify(filtered));
     this.notifyListeners();
   }
 
@@ -380,8 +444,46 @@ class OfflineSyncStore {
     if (existing) {
       const idx = alerts.findIndex((a) => a.id === existing!.id);
       alerts[idx] = result;
+      const wasProcessed = existing.status !== "processed" && result.status === "processed";
+      if (wasProcessed) {
+        auditLogger
+          .logProcess(
+            "alert",
+            result.id,
+            existing as unknown as Record<string, unknown>,
+            result as unknown as Record<string, unknown>,
+            {
+              tankId: result.tankId,
+              tankName: result.tankName,
+              operator: result.handler || existing.handler,
+              detail: `离线处理异常提醒: ${result.treatment || "处理"}${result.treatmentNote ? ` - ${result.treatmentNote}` : ""}`,
+            }
+          )
+          .catch(() => {});
+      } else {
+        auditLogger
+          .logUpdate(
+            "alert",
+            result.id,
+            existing as unknown as Record<string, unknown>,
+            result as unknown as Record<string, unknown>,
+            {
+              tankId: result.tankId,
+              tankName: result.tankName,
+              detail: "离线编辑异常提醒",
+            }
+          )
+          .catch(() => {});
+      }
     } else {
       alerts.unshift(result);
+      auditLogger
+        .logCreate("alert", result as unknown as Record<string, unknown>, {
+          tankId: result.tankId,
+          tankName: result.tankName,
+          detail: "离线新增异常提醒",
+        })
+        .catch(() => {});
     }
 
     this.saveToStorage(STORAGE_KEYS.ALERTS, JSON.stringify(alerts));
@@ -454,8 +556,45 @@ class OfflineSyncStore {
     if (existing) {
       const idx = tasks.findIndex((t) => t.id === existing!.id);
       tasks[idx] = result;
+      const wasCompleted = existing.status !== "completed" && result.status === "completed";
+      if (wasCompleted) {
+        auditLogger
+          .logComplete(
+            "maintenanceTask",
+            result.id,
+            existing as unknown as Record<string, unknown>,
+            result as unknown as Record<string, unknown>,
+            {
+              tankId: result.tankId,
+              tankName: result.tankName,
+              detail: `离线完成维护任务${result.completedNote ? `: ${result.completedNote}` : ""}`,
+            }
+          )
+          .catch(() => {});
+      } else {
+        auditLogger
+          .logUpdate(
+            "maintenanceTask",
+            result.id,
+            existing as unknown as Record<string, unknown>,
+            result as unknown as Record<string, unknown>,
+            {
+              tankId: result.tankId,
+              tankName: result.tankName,
+              detail: "离线编辑维护任务",
+            }
+          )
+          .catch(() => {});
+      }
     } else {
       tasks.unshift(result);
+      auditLogger
+        .logCreate("maintenanceTask", result as unknown as Record<string, unknown>, {
+          tankId: result.tankId,
+          tankName: result.tankName,
+          detail: "离线新增维护任务",
+        })
+        .catch(() => {});
     }
 
     this.saveToStorage(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
@@ -490,8 +629,19 @@ class OfflineSyncStore {
   }
 
   deleteTask(id: string) {
-    const tasks = this.getTasks().filter((t) => t.id !== id);
-    this.saveToStorage(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
+    const tasks = this.getTasks();
+    const existing = tasks.find((t) => t.id === id);
+    const filtered = tasks.filter((t) => t.id !== id);
+    if (existing) {
+      auditLogger
+        .logDelete("maintenanceTask", existing as unknown as Record<string, unknown>, {
+          tankId: existing.tankId,
+          tankName: existing.tankName,
+          detail: "离线删除维护任务",
+        })
+        .catch(() => {});
+    }
+    this.saveToStorage(STORAGE_KEYS.TASKS, JSON.stringify(filtered));
     this.notifyListeners();
   }
 
@@ -515,7 +665,21 @@ class OfflineSyncStore {
         dueDate.setHours(0, 0, 0, 0);
         if (dueDate.getTime() < today.getTime()) {
           hasUpdates = true;
-          return { ...task, status: "overdue" as OfflineRetestTaskStatus };
+          const newTask = { ...task, status: "overdue" as OfflineRetestTaskStatus };
+          auditLogger
+            .logUpdate(
+              "retestTask",
+              task.id,
+              task as unknown as Record<string, unknown>,
+              newTask as unknown as Record<string, unknown>,
+              {
+                tankId: task.tankId,
+                tankName: task.tankName,
+                detail: "复测任务已逾期，自动标记为逾期状态",
+              }
+            )
+            .catch(() => {});
+          return newTask;
         }
       }
       return task;
@@ -579,6 +743,47 @@ class OfflineSyncStore {
     const allTasks = tasks.filter((t) => t.id !== result.id);
     allTasks.unshift(result);
 
+    if (existing) {
+      const wasCompleted = existing.status !== "completed" && result.status === "completed";
+      if (wasCompleted) {
+        auditLogger
+          .logComplete(
+            "retestTask",
+            result.id,
+            existing as unknown as Record<string, unknown>,
+            result as unknown as Record<string, unknown>,
+            {
+              tankId: result.tankId,
+              tankName: result.tankName,
+              detail: `离线完成复测任务${result.retestResult === "recovered" ? "（已恢复）" : result.retestResult === "not_recovered" ? "（未恢复）" : ""}: ${result.retestValue || ""}`,
+            }
+          )
+          .catch(() => {});
+      } else {
+        auditLogger
+          .logUpdate(
+            "retestTask",
+            result.id,
+            existing as unknown as Record<string, unknown>,
+            result as unknown as Record<string, unknown>,
+            {
+              tankId: result.tankId,
+              tankName: result.tankName,
+              detail: "离线编辑复测任务",
+            }
+          )
+          .catch(() => {});
+      }
+    } else {
+      auditLogger
+        .logCreate("retestTask", result as unknown as Record<string, unknown>, {
+          tankId: result.tankId,
+          tankName: result.tankName,
+          detail: `离线新增复测任务: ${result.sourceAlertMetricLabel || result.sourceAlertMetric}`,
+        })
+        .catch(() => {});
+    }
+
     this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(allTasks));
     this.notifyListeners();
     return result;
@@ -612,8 +817,19 @@ class OfflineSyncStore {
   }
 
   deleteRetestTask(id: string) {
-    const tasks = this.getRetestTasks().filter((t) => t.id !== id);
-    this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(tasks));
+    const tasks = this.getRetestTasks();
+    const existing = tasks.find((t) => t.id === id);
+    const filtered = tasks.filter((t) => t.id !== id);
+    if (existing) {
+      auditLogger
+        .logDelete("retestTask", existing as unknown as Record<string, unknown>, {
+          tankId: existing.tankId,
+          tankName: existing.tankName,
+          detail: "离线删除复测任务",
+        })
+        .catch(() => {});
+    }
+    this.saveToStorage(STORAGE_KEYS.RETEST_TASKS, JSON.stringify(filtered));
     this.notifyListeners();
   }
 
@@ -754,7 +970,16 @@ class OfflineSyncStore {
     const queue = this.getSyncQueue();
     const queuedEntityIds = new Set(queue.map((q) => q.entityId));
 
-    const promoteList = <T extends { id: string; syncMeta: SyncMeta }>(
+    const promoteList = <
+      T extends {
+        id: string;
+        syncMeta: SyncMeta;
+        tankId?: string;
+        tankName?: string;
+        name?: string;
+        title?: string;
+      }
+    >(
       entities: T[],
       entityType: EntityType
     ): T[] => {
@@ -765,6 +990,8 @@ class OfflineSyncStore {
           entity.syncMeta.pendingOperation &&
           !queuedEntityIds.has(entity.id)
         ) {
+          const beforeMeta = { ...entity.syncMeta };
+          const beforeEntity = { ...entity };
           entity.syncMeta = {
             ...entity.syncMeta,
             syncStatus: "pending",
@@ -775,6 +1002,19 @@ class OfflineSyncStore {
             entity.syncMeta.pendingOperation!,
             entity
           );
+          auditLogger
+            .logUpdate(
+              entityType as AuditEntityType,
+              entity.id,
+              { ...beforeEntity, syncMeta: beforeMeta } as unknown as Record<string, unknown>,
+              entity as unknown as Record<string, unknown>,
+              {
+                tankId: entity.tankId,
+                tankName: entity.tankName,
+                detail: `网络恢复，草稿提交同步队列（${entity.syncMeta.pendingOperation}）`,
+              }
+            )
+            .catch(() => {});
           promoted++;
         }
         updated.push(entity);
@@ -828,12 +1068,14 @@ class OfflineSyncStore {
   }
 
   clearAllOfflineData() {
+    auditLogger.logClearAll().catch(() => {});
     Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
     this.notifyListeners();
   }
 
   resetToDemoData() {
-    this.clearAllOfflineData();
+    auditLogger.logResetSeed().catch(() => {});
+    Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
     const now = new Date();
     const nowStr = formatDate(now);
     const yesterday = new Date(now);
